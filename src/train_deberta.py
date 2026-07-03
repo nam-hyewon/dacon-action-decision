@@ -17,16 +17,8 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-
-# =========================
-# Config
-# =========================
-
 SEED = 42
-
-# 첫 실행은 small 추천. 파이프라인 확인 후 base로 변경.
 MODEL_NAME = os.environ.get("MODEL_NAME", "microsoft/deberta-v3-small")
-# MODEL_NAME = "microsoft/deberta-v3-base"
 
 MAX_LEN = int(os.environ.get("MAX_LEN", 512))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 8))
@@ -50,11 +42,7 @@ DATA_DIR = ROOT_DIR / "data"
 SAVE_DIR = ROOT_DIR / "submit" / "model" / "deberta"
 
 
-# =========================
-# Utils
-# =========================
-
-def set_seed(seed: int = 42):
+def set_seed(seed=42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -62,10 +50,6 @@ def set_seed(seed: int = 42):
 
 
 def build_text(sample):
-    """
-    Transformer용 입력 포맷.
-    current_prompt와 최근 history를 특히 강조한다.
-    """
     parts = []
 
     meta = sample.get("session_meta", {})
@@ -73,11 +57,9 @@ def build_text(sample):
     history = sample.get("history", [])
     current_prompt = str(sample.get("current_prompt", ""))
 
-    # 1. 현재 유저 요청: 가장 중요하므로 맨 앞에 배치
     parts.append("[CURRENT_PROMPT]")
     parts.append(current_prompt)
 
-    # 2. 세션 메타
     parts.append("[SESSION_META]")
     parts.append(f"user_tier: {meta.get('user_tier', '')}")
     parts.append(f"language_pref: {meta.get('language_pref', '')}")
@@ -85,7 +67,6 @@ def build_text(sample):
     parts.append(f"turn_index: {meta.get('turn_index', '')}")
     parts.append(f"elapsed_session_sec: {meta.get('elapsed_session_sec', '')}")
 
-    # 3. 워크스페이스 정보
     parts.append("[WORKSPACE]")
     parts.append(f"loc: {workspace.get('loc', '')}")
     parts.append(f"git_dirty: {workspace.get('git_dirty', '')}")
@@ -99,7 +80,6 @@ def build_text(sample):
         f"{k}:{v}" for k, v in language_mix.items()
     ))
 
-    # 4. 최근 history 중심
     recent_history = history[-8:]
     parts.append("[RECENT_HISTORY]")
 
@@ -119,7 +99,6 @@ def build_text(sample):
             parts.append(f"args: {h.get('args', '')}")
             parts.append(f"result: {h.get('result_summary', '')}")
 
-    # 5. 최근 action sequence 강조
     parts.append("[RECENT_ACTIONS]")
     parts.append(" ".join(recent_actions))
 
@@ -127,8 +106,6 @@ def build_text(sample):
         parts.append("[LAST_ACTION]")
         parts.append(recent_actions[-1])
 
-    # 6. current prompt를 마지막에도 한 번 더 넣음
-    # 긴 입력에서 앞/뒤 모두에 중요한 정보가 남게 하기 위함
     parts.append("[CURRENT_PROMPT_AGAIN]")
     parts.append(current_prompt)
 
@@ -136,17 +113,14 @@ def build_text(sample):
 
 
 def load_data():
-    train_path = DATA_DIR / "train.jsonl"
-    label_path = DATA_DIR / "train_labels.csv"
-
     samples = []
-    with open(train_path, encoding="utf-8") as f:
+    with open(DATA_DIR / "train.jsonl", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 samples.append(json.loads(line))
 
     labels = {}
-    with open(label_path, encoding="utf-8") as f:
+    with open(DATA_DIR / "train_labels.csv", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             labels[row["id"]] = row["action"]
 
@@ -184,8 +158,10 @@ def make_collate_fn(tokenizer):
         )
 
         if "label" in batch[0]:
-            labels = torch.tensor([x["label"] for x in batch], dtype=torch.long)
-            enc["labels"] = labels
+            enc["labels"] = torch.tensor(
+                [x["label"] for x in batch],
+                dtype=torch.long,
+            )
 
         return enc
 
@@ -204,8 +180,7 @@ def evaluate(model, loader, device):
         batch = {k: v.to(device) for k, v in batch.items()}
 
         outputs = model(**batch)
-        logits = outputs.logits
-
+        logits = outputs.logits.float()
         preds = torch.argmax(logits, dim=-1)
 
         all_preds.extend(preds.cpu().numpy().tolist())
@@ -252,6 +227,8 @@ def main():
         id2label={str(i): label for i, label in ID2LABEL.items()},
         label2id=LABEL2ID,
     )
+
+    model.float()
     model.to(device)
 
     train_ds = ActionDataset(train_texts, train_labels)
@@ -275,17 +252,6 @@ def main():
         num_workers=2,
     )
 
-    # class imbalance 대응: weighted CE
-    counts = Counter(train_labels)
-    total = len(train_labels)
-    weights = []
-    for i in range(len(ALL_CLASSES)):
-        c = counts.get(i, 1)
-        weights.append(total / (len(ALL_CLASSES) * c))
-
-    class_weights = torch.tensor(weights, dtype=torch.float).to(device)
-    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
-
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=LR,
@@ -301,8 +267,6 @@ def main():
         num_training_steps=total_steps,
     )
 
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda"))
-
     best_f1 = -1.0
     SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -316,17 +280,13 @@ def main():
 
             optimizer.zero_grad(set_to_none=True)
 
-            with torch.cuda.amp.autocast(enabled=(device.type == "cuda")):
-                outputs = model(**batch)
-                logits = outputs.logits
-                loss = criterion(logits, labels_batch)
+            outputs = model(**batch, labels=labels_batch)
+            loss = outputs.loss
 
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
-            scaler.step(optimizer)
-            scaler.update()
+            optimizer.step()
             scheduler.step()
 
             running_loss += loss.item()
