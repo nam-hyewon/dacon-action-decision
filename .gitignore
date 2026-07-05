@@ -15,3 +15,13 @@ submit/model/
 *.npy
 __pycache__/
 *.pyc
+
+# experiment outputs
+submit/model/
+output/
+eda_outputs/
+notebooks/
+slurm-*.out
+*.npy
+__pycache__/
+*.pyc
