@@ -1,26 +1,114 @@
-# =======================
-# 1. 라이브러리 불러오기
-# =======================
-# csv/json/os: 표준 라이브러리로 데이터를 읽고 결과를 씁니다.
-# joblib: 학습 때 저장한 모델(.pkl)을 불러옵니다.
 import csv
 import json
 import os
 
-import joblib
+import torch
+from torch.utils.data import Dataset, DataLoader
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 
-# =======================
-# 2. 입력 전처리 유틸 (학습 때와 동일하게 current_prompt만 사용)
-# =======================
-# 추론 입력은 반드시 '학습 때와 똑같은 방식'으로 만들어야 합니다.
-# 학습에서 입력으로 current_prompt 문자열만 사용했으므로, 여기서도 동일하게 뽑습니다.
+MODEL_DIR = "./model/deberta"
+DATA_DIR = "./data"
+OUT_DIR = "./output"
 
-REQUIRED_KEYS = ("id", "session_meta", "history", "current_prompt")
+TEST_PATH = os.path.join(DATA_DIR, "test.jsonl")
+SAMPLE_SUB_PATH = os.path.join(DATA_DIR, "sample_submission.csv")
+OUT_PATH = os.path.join(OUT_DIR, "submission.csv")
+
+PRIOR_PATH = os.path.join(MODEL_DIR, "transition_prior.json")
+PRIOR_ALPHA = float(os.environ.get("PRIOR_ALPHA", "0.12"))
+
+MAX_LEN = 512
+BATCH_SIZE = 32
+
+
+def get_last_action(sample):
+    history = sample.get("history", [])
+    actions = [
+        h.get("name", "")
+        for h in history
+        if h.get("role") == "assistant_action"
+    ]
+    return actions[-1] if actions else "none"
+
+
+def load_transition_prior(path):
+    if not os.path.exists(path):
+        print("No transition prior found:", path)
+        return None
+
+    with open(path, encoding="utf-8") as f:
+        prior = json.load(f)
+
+    print("Loaded transition prior:", path)
+    print("PRIOR_ALPHA:", PRIOR_ALPHA)
+    return prior
+
+
+def build_text(sample):
+    parts = []
+
+    meta = sample.get("session_meta", {})
+    workspace = meta.get("workspace", {})
+    history = sample.get("history", [])
+    current_prompt = str(sample.get("current_prompt", ""))
+
+    parts.append("[CURRENT_PROMPT]")
+    parts.append(current_prompt)
+
+    parts.append("[SESSION_META]")
+    parts.append(f"user_tier: {meta.get('user_tier', '')}")
+    parts.append(f"language_pref: {meta.get('language_pref', '')}")
+    parts.append(f"budget_tokens_remaining: {meta.get('budget_tokens_remaining', '')}")
+    parts.append(f"turn_index: {meta.get('turn_index', '')}")
+    parts.append(f"elapsed_session_sec: {meta.get('elapsed_session_sec', '')}")
+
+    parts.append("[WORKSPACE]")
+    parts.append(f"loc: {workspace.get('loc', '')}")
+    parts.append(f"git_dirty: {workspace.get('git_dirty', '')}")
+    parts.append(f"last_ci_status: {workspace.get('last_ci_status', '')}")
+
+    open_files = workspace.get("open_files", [])
+    parts.append("open_files: " + " ".join(map(str, open_files)))
+
+    language_mix = workspace.get("language_mix", {})
+    parts.append("language_mix: " + " ".join(
+        f"{k}:{v}" for k, v in language_mix.items()
+    ))
+
+    recent_history = history[-8:]
+    parts.append("[RECENT_HISTORY]")
+
+    recent_actions = []
+    for h in recent_history:
+        role = h.get("role", "")
+
+        if role == "user":
+            parts.append("[USER]")
+            parts.append(str(h.get("content", "")))
+        else:
+            action_name = str(h.get("name", ""))
+            recent_actions.append(action_name)
+
+            parts.append("[ASSISTANT_ACTION]")
+            parts.append(f"name: {action_name}")
+            parts.append(f"args: {h.get('args', '')}")
+            parts.append(f"result: {h.get('result_summary', '')}")
+
+    parts.append("[RECENT_ACTIONS]")
+    parts.append(" ".join(recent_actions))
+
+    if recent_actions:
+        parts.append("[LAST_ACTION]")
+        parts.append(recent_actions[-1])
+
+    parts.append("[CURRENT_PROMPT_AGAIN]")
+    parts.append(current_prompt)
+
+    return "\n".join(parts)
 
 
 def load_jsonl(path):
-    """평가 데이터(jsonl) 로드. 한 줄당 샘플 하나."""
     samples = []
     with open(path, encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
@@ -28,140 +116,171 @@ def load_jsonl(path):
             if not line:
                 continue
             try:
-                obj = json.loads(line)
+                samples.append(json.loads(line))
             except json.JSONDecodeError as e:
-                raise ValueError(f"{path}:{line_no} JSON 파싱 실패: {e}")
-            samples.append(obj)
+                raise ValueError(f"{path}:{line_no} JSON parsing failed: {e}")
     return samples
 
 
-def validate_samples(samples):
-    """필수 키 존재 여부 검증 (학습 데이터와 동일 스키마)."""
-    n_bad = 0
-    for s in samples:
-        for k in REQUIRED_KEYS:
-            if k not in s:
-                n_bad += 1
-                break
-    if n_bad:
-        print(f" 경고: 필수 키 누락 샘플 {n_bad}건 (빈 텍스트로 처리)")
-    return n_bad
+def load_labels(model_dir):
+    labels_path = os.path.join(model_dir, "labels.json")
+    with open(labels_path, encoding="utf-8") as f:
+        obj = json.load(f)
+    return obj["all_classes"]
 
 
-def extract_text(sample):
-    """모델 입력 텍스트 추출 — 학습 때와 동일하게 current_prompt만 사용.
+class TestDataset(Dataset):
+    def __init__(self, samples):
+        self.samples = samples
+        self.ids = [s.get("id", "") for s in samples]
+        self.texts = [build_text(s) for s in samples]
 
-    TF-IDF 파이프라인이 토큰화/벡터화를 모두 포함하므로 여기서는
-    문자열만 뽑는다. current_prompt가 없거나 문자열이 아니면 빈 문자열.
-    """
-    text = sample.get("current_prompt", "")
-    if not isinstance(text, str):
-        text = "" if text is None else str(text)
-    return text
+    def __len__(self):
+        return len(self.texts)
 
-
-def build_features(samples):
-    """샘플 리스트 → (ids, 모델 입력 텍스트 리스트)."""
-    ids = []
-    texts = []
-    for s in samples:
-        ids.append(s.get("id", ""))
-        texts.append(extract_text(s))
-    n_empty = sum(1 for t in texts if not t.strip())
-    if n_empty:
-        print(f" 경고: current_prompt가 비어있는 샘플 {n_empty}건")
-    return ids, texts
+    def __getitem__(self, idx):
+        return {
+            "id": self.ids[idx],
+            "text": self.texts[idx],
+            "sample": self.samples[idx],
+        }
 
 
-# =======================
-# 3. 제출 파일 생성 유틸 (sample_submission의 id 순서/형식 기준)
-# =======================
-# 제출 파일은 sample_submission.csv 와 '같은 id 순서, 같은 컬럼(id, action)'이어야
-# 합니다. 모델 예측을 id 기준으로 sample_submission에 채워 넣습니다.
+def make_collate_fn(tokenizer):
+    def collate_fn(batch):
+        ids = [x["id"] for x in batch]
+        texts = [x["text"] for x in batch]
+        raw_samples = [x["sample"] for x in batch]
+
+        enc = tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=MAX_LEN,
+            return_tensors="pt",
+        )
+
+        return ids, raw_samples, enc
+
+    return collate_fn
+
+
+def apply_transition_prior_np(logits, raw_samples, prior, all_classes):
+    if prior is None:
+        return logits
+
+    transition_logprob = prior["transition_logprob"]
+    global_logprob = prior["global_logprob"]
+
+    for i, sample in enumerate(raw_samples):
+        last_action = get_last_action(sample)
+        logprob_dict = transition_logprob.get(last_action, global_logprob)
+
+        for j, cls in enumerate(all_classes):
+            logits[i, j] += PRIOR_ALPHA * float(
+                logprob_dict.get(cls, global_logprob.get(cls, -10.0))
+            )
+
+    return logits
+
 
 def load_sample_submission(path):
-    """sample_submission.csv 로드 — 제출 파일의 id 순서/컬럼 기준."""
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
         rows = list(reader)
+
     if fieldnames is None or fieldnames[:2] != ["id", "action"]:
-        raise ValueError(
-            f"sample_submission 컬럼이 (id, action)이 아님: {fieldnames}")
+        raise ValueError(f"sample_submission columns are not ['id', 'action']: {fieldnames}")
+
     return fieldnames, rows
-
-
-def merge_predictions(sub_rows, ids, preds):
-    """sample_submission의 id 순서에 맞춰 예측값 병합.
-
-    예측에 없는 id는 sample_submission의 기존 값(placeholder)을 유지한다.
-    """
-    pred_map = dict(zip(ids, preds))
-    n_missing = 0
-    for row in sub_rows:
-        p = pred_map.get(row["id"])
-        if p is None:
-            n_missing += 1
-        else:
-            row["action"] = p
-    if n_missing:
-        print(f" 경고: 예측이 없어 placeholder를 유지한 id {n_missing}건")
-    return sub_rows
 
 
 def save_submission(path, fieldnames, rows):
     os.makedirs(os.path.dirname(path), exist_ok=True)
+
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 
 
-# =======================
-# 4. 추론 실행 (모델 로드 → 예측 → 제출 파일 생성)
-# =======================
-
 def main():
-    # ---- 경로 변수 (필요에 따라 수정) ----
-    TEST_DIR = "./data"            # test.jsonl, sample_submission.csv 위치
-    MODEL_DIR = "./model"          # tfidf_logreg.pkl 위치
-    OUT_DIR = "./output"
-    TEST_PATH = os.path.join(TEST_DIR, "test.jsonl")
-    SAMPLE_SUB_PATH = os.path.join(TEST_DIR, "sample_submission.csv")
-    MODEL_PATH = os.path.join(MODEL_DIR, "tfidf_logreg.pkl")
-    OUT_PATH = os.path.join(OUT_DIR, "submission.csv")
-
-    # ---- 모델 로드 ----
-    # 학습 노트북이 저장한 파이프라인(TF-IDF + 로지스틱 회귀)을 그대로 불러옵니다.
-    print("Load model...")
-    model = joblib.load(MODEL_PATH)
-    classes = list(getattr(model, "classes_", []))
-    print(f" OK. classes={len(classes)}")
-
-    # ---- 테스트 데이터 로드 ----
     print("Load test data...")
     samples = load_jsonl(TEST_PATH)
-    validate_samples(samples)
-    print(f" samples={len(samples)}")
+    print(f"samples={len(samples)}")
 
-    # ---- 전처리 (학습과 동일: current_prompt 추출) ----
-    print("Build features...")
-    ids, texts = build_features(samples)
-    print(f" texts={len(texts)}")
+    print("Load labels...")
+    all_classes = load_labels(MODEL_DIR)
+    print(f"classes={len(all_classes)}")
 
-    # ---- 예측 ----
-    # 파이프라인이 TF-IDF 변환과 분류를 함께 수행하므로 텍스트를 그대로 넣습니다.
-    print("Inference model...")
-    preds = model.predict(texts) if texts else []
-    preds = [str(p) for p in preds]
-    print(f" preds={len(preds)}")
+    prior = load_transition_prior(PRIOR_PATH)
 
-    # ---- sample_submission 기반 결과 생성 (action 컬럼에 예측 클래스 채움) ----
+    print("Load tokenizer/model from local directory...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=True)
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("device:", device)
+
+    model.to(device)
+    model.eval()
+
+    if device.type == "cuda":
+        model.half()
+
+    dataset = TestDataset(samples)
+    loader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        collate_fn=make_collate_fn(tokenizer),
+        num_workers=2,
+    )
+
+    pred_map = {}
+
+    print("Inference...")
+    with torch.no_grad():
+        for step, (ids, raw_samples, batch) in enumerate(loader, start=1):
+            batch = {k: v.to(device) for k, v in batch.items()}
+
+            outputs = model(**batch)
+            logits = outputs.logits.float().detach().cpu().numpy()
+
+            logits = apply_transition_prior_np(
+                logits=logits,
+                raw_samples=raw_samples,
+                prior=prior,
+                all_classes=all_classes,
+            )
+
+            pred_ids = logits.argmax(axis=-1).tolist()
+
+            for sid, pid in zip(ids, pred_ids):
+                pred_map[sid] = all_classes[int(pid)]
+
+            if step % 100 == 0:
+                print(f"step {step}/{len(loader)}")
+
     print("Build submission...")
-    fieldnames, sub_rows = load_sample_submission(SAMPLE_SUB_PATH)
-    sub_rows = merge_predictions(sub_rows, ids, preds)
-    save_submission(OUT_PATH, fieldnames, sub_rows)
-    print(f"Saved: {OUT_PATH} (rows={len(sub_rows)})")
+    fieldnames, rows = load_sample_submission(SAMPLE_SUB_PATH)
+
+    missing = 0
+    for row in rows:
+        sid = row["id"]
+        if sid in pred_map:
+            row["action"] = pred_map[sid]
+        else:
+            missing += 1
+
+    if missing:
+        print(f"Warning: missing predictions for {missing} rows")
+
+    save_submission(OUT_PATH, fieldnames, rows)
+
+    print(f"Saved: {OUT_PATH} rows={len(rows)}")
+    print("Done.")
 
 
 if __name__ == "__main__":
