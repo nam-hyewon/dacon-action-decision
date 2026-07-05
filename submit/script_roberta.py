@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import re
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -19,67 +20,178 @@ MAX_LEN = 512
 BATCH_SIZE = 32
 
 
-def build_text(sample):
-    parts = []
+# =========================================================
+# 아래 헬퍼 + build_text는 train_roberta.py의 eda_state와
+# 반드시 동일해야 함 (학습/추론 일치)
+# =========================================================
+def get_actions(sample):
+    return [
+        str(h.get("name", ""))
+        for h in sample.get("history", [])
+        if h.get("role") == "assistant_action"
+    ]
 
+
+def get_last_action(sample):
+    actions = get_actions(sample)
+    return actions[-1] if actions else "none"
+
+
+def get_prev_action(sample):
+    actions = get_actions(sample)
+    return actions[-2] if len(actions) >= 2 else "none"
+
+
+def get_step_from_id(sid):
+    m = re.search(r"step_(\d+)", str(sid))
+    return m.group(1) if m else "none"
+
+
+def bucket_int(value, cuts):
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return "unknown"
+    for name, upper in cuts:
+        if v <= upper:
+            return name
+    return f"gt_{cuts[-1][1]}"
+
+
+def build_text_eda_state_light(sample):
+    """train_roberta.py의 eda_state_light와 동일해야 함.
+
+    주의: labels.json의 text_mode가 'eda_state'로 되어 있으나,
+    실제 최고 성능(및 토큰 안정성)을 낸 입력은 eda_state_light입니다.
+    반드시 학습에 사용한 모델과 동일한 build_text를 쓰세요.
+    """
     meta = sample.get("session_meta", {})
     workspace = meta.get("workspace", {})
     history = sample.get("history", [])
     current_prompt = str(sample.get("current_prompt", ""))
 
-    parts.append("[CURRENT_PROMPT]")
-    parts.append(current_prompt)
+    actions = get_actions(sample)
+    action_seq = " > ".join(actions[-8:])
 
-    parts.append("[SESSION_META]")
-    parts.append(f"user_tier: {meta.get('user_tier', '')}")
-    parts.append(f"language_pref: {meta.get('language_pref', '')}")
-    parts.append(f"budget_tokens_remaining: {meta.get('budget_tokens_remaining', '')}")
-    parts.append(f"turn_index: {meta.get('turn_index', '')}")
-    parts.append(f"elapsed_session_sec: {meta.get('elapsed_session_sec', '')}")
+    prompt_len = len(current_prompt)
+    history_len = len(history)
+    turn_index = meta.get("turn_index", 0)
 
-    parts.append("[WORKSPACE]")
-    parts.append(f"loc: {workspace.get('loc', '')}")
-    parts.append(f"git_dirty: {workspace.get('git_dirty', '')}")
-    parts.append(f"last_ci_status: {workspace.get('last_ci_status', '')}")
+    return "\n".join([
+        "[EDA_STATE_LIGHT]",
+        "[CURRENT_PROMPT]",
+        current_prompt,
+        "[CURRENT_PROMPT_REPEAT]",
+        current_prompt,
+        "[ACTION_STATE]",
+        f"last_action: {get_last_action(sample)}",
+        f"prev_action: {get_prev_action(sample)}",
+        f"action_sequence: {action_seq}",
+        "[LIGHT_EDA_FEATURES]",
+        f"prompt_len: {prompt_len}",
+        f"prompt_len_bucket: {bucket_int(prompt_len, [('short', 45), ('medium', 80), ('long', 120)])}",
+        f"is_first_turn: {str(history_len == 0)}",
+        f"history_len: {history_len}",
+        f"history_bucket: {bucket_int(history_len, [('h0', 0), ('h1_3', 3), ('h4_7', 7), ('h8_12', 12)])}",
+        f"turn_index: {turn_index}",
+        f"turn_bucket: {bucket_int(turn_index, [('t1', 1), ('t2_4', 4), ('t5_8', 8), ('t9_12', 12)])}",
+        f"step: {get_step_from_id(sample.get('id', ''))}",
+        f"last_ci_status: {workspace.get('last_ci_status', '')}",
+        f"ci_failed: {str(workspace.get('last_ci_status', '') == 'failed')}",
+        f"git_dirty: {workspace.get('git_dirty', '')}",
+    ])
 
-    open_files = workspace.get("open_files", [])
-    parts.append("open_files: " + " ".join(map(str, open_files)))
 
-    language_mix = workspace.get("language_mix", {})
-    parts.append("language_mix: " + " ".join(
-        f"{k}:{v}" for k, v in language_mix.items()
-    ))
+def build_text_eda_state(sample):
+    """train_roberta.py의 eda_state(원본, 857토큰)와 동일해야 함."""
+    meta = sample.get("session_meta", {})
+    workspace = meta.get("workspace", {})
+    history = sample.get("history", [])
+    current_prompt = str(sample.get("current_prompt", ""))
 
-    recent_history = history[-8:]
-    parts.append("[RECENT_HISTORY]")
-
-    recent_actions = []
-    for h in recent_history:
+    # compact_history 재현
+    hist = history[-10:]
+    parts_hist = []
+    action_list = []
+    user_utts = []
+    last_result = ""
+    for h in hist:
         role = h.get("role", "")
-
         if role == "user":
-            parts.append("[USER]")
-            parts.append(str(h.get("content", "")))
-        else:
-            action_name = str(h.get("name", ""))
-            recent_actions.append(action_name)
+            txt = str(h.get("content", ""))
+            user_utts.append(txt)
+            parts_hist.append(f"U: {txt}")
+        elif role == "assistant_action":
+            name = str(h.get("name", ""))
+            args = str(h.get("args", ""))
+            result = str(h.get("result_summary", ""))
+            action_list.append(name)
+            last_result = result
+            parts_hist.append(f"ACTION: {name} ARGS: {args} RESULT: {result}")
+    history_text = "\n".join(parts_hist)
+    action_seq = " > ".join(action_list)
 
-            parts.append("[ASSISTANT_ACTION]")
-            parts.append(f"name: {action_name}")
-            parts.append(f"args: {h.get('args', '')}")
-            parts.append(f"result: {h.get('result_summary', '')}")
+    user_turns = [str(h.get("content", "")) for h in history if h.get("role") == "user"]
+    language_mix = workspace.get("language_mix", {}) or {}
+    main_lang = max(language_mix, key=language_mix.get) if language_mix else "none"
+    open_files = workspace.get("open_files", [])
+    lang_mix = " ".join(f"{k}:{v}" for k, v in language_mix.items())
 
-    parts.append("[RECENT_ACTIONS]")
-    parts.append(" ".join(recent_actions))
+    prompt_len = len(current_prompt)
+    history_len = len(history)
+    turn_index = meta.get("turn_index", 0)
 
-    if recent_actions:
-        parts.append("[LAST_ACTION]")
-        parts.append(recent_actions[-1])
+    return "\n".join([
+        "[EDA_STATE_V2_PRIORITY_FRONT]",
+        "[CURRENT_PROMPT]",
+        current_prompt,
+        "[CURRENT_PROMPT_REPEAT]",
+        current_prompt,
+        "[HIGH_PRIORITY_EDA_FEATURES]",
+        f"prompt_len: {prompt_len}",
+        f"prompt_len_bucket: {bucket_int(prompt_len, [('short', 45), ('medium', 80), ('long', 120)])}",
+        f"is_first_turn: {str(history_len == 0)}",
+        f"history_len: {history_len}",
+        f"history_bucket: {bucket_int(history_len, [('h0', 0), ('h1_3', 3), ('h4_7', 7), ('h8_12', 12)])}",
+        f"last_action: {get_last_action(sample)}",
+        f"prev_action: {get_prev_action(sample)}",
+        f"action_sequence: {action_seq}",
+        f"turn_index: {turn_index}",
+        f"turn_bucket: {bucket_int(turn_index, [('t1', 1), ('t2_4', 4), ('t5_8', 8), ('t9_12', 12)])}",
+        f"step: {get_step_from_id(sample.get('id', ''))}",
+        f"last_ci_status: {workspace.get('last_ci_status', '')}",
+        f"ci_failed: {str(workspace.get('last_ci_status', '') == 'failed')}",
+        f"git_dirty: {workspace.get('git_dirty', '')}",
+        "[MEDIUM_PRIORITY_CONTEXT]",
+        "[RECENT_USER_REQUESTS]",
+        "\n".join(user_turns[-3:]),
+        "[LAST_ACTION_RESULT]",
+        last_result,
+        "[LOW_PRIORITY_WORKSPACE]",
+        f"num_open_files: {len(open_files)}",
+        f"main_lang: {main_lang}",
+        f"user_tier: {meta.get('user_tier', '')}",
+        f"language_pref: {meta.get('language_pref', '')}",
+        f"budget_tokens_remaining: {meta.get('budget_tokens_remaining', '')}",
+        f"elapsed_session_sec: {meta.get('elapsed_session_sec', '')}",
+        "[OPEN_FILES]",
+        " ".join(map(str, open_files)),
+        f"language_mix: {lang_mix}",
+        f"loc: {workspace.get('loc', '')}",
+        "[COMPACT_HISTORY]",
+        history_text,
+    ])
 
-    parts.append("[CURRENT_PROMPT_AGAIN]")
-    parts.append(current_prompt)
 
-    return "\n".join(parts)
+# ★★★ 제출하는 모델이 어떤 text_mode로 학습됐는지에 맞춰 선택 ★★★
+# labels.json의 text_mode를 확인하고 반드시 일치시킬 것
+TEXT_MODE = os.environ.get("TEXT_MODE", "eda_state")
+
+
+def build_text(sample):
+    if TEXT_MODE == "eda_state_light":
+        return build_text_eda_state_light(sample)
+    return build_text_eda_state(sample)
 
 
 def load_jsonl(path):
@@ -112,27 +224,18 @@ class TestDataset(Dataset):
         return len(self.texts)
 
     def __getitem__(self, idx):
-        return {
-            "id": self.ids[idx],
-            "text": self.texts[idx],
-        }
+        return {"id": self.ids[idx], "text": self.texts[idx]}
 
 
 def make_collate_fn(tokenizer):
     def collate_fn(batch):
         ids = [x["id"] for x in batch]
         texts = [x["text"] for x in batch]
-
         enc = tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=MAX_LEN,
-            return_tensors="pt",
+            texts, padding=True, truncation=True,
+            max_length=MAX_LEN, return_tensors="pt",
         )
-
         return ids, enc
-
     return collate_fn
 
 
@@ -141,16 +244,13 @@ def load_sample_submission(path):
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
         rows = list(reader)
-
     if fieldnames is None or fieldnames[:2] != ["id", "action"]:
         raise ValueError(f"sample_submission columns are not ['id', 'action']: {fieldnames}")
-
     return fieldnames, rows
 
 
 def save_submission(path, fieldnames, rows):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -176,39 +276,30 @@ def main():
     model.to(device)
     model.eval()
 
-    # 평가 서버는 T4 GPU이므로 half precision으로 추론 속도 개선
     if device.type == "cuda":
         model.half()
 
     dataset = TestDataset(samples)
     loader = DataLoader(
-        dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        collate_fn=make_collate_fn(tokenizer),
-        num_workers=2,
+        dataset, batch_size=BATCH_SIZE, shuffle=False,
+        collate_fn=make_collate_fn(tokenizer), num_workers=2,
     )
 
     pred_map = {}
-
     print("Inference...")
     with torch.no_grad():
         for step, (ids, batch) in enumerate(loader, start=1):
             batch = {k: v.to(device) for k, v in batch.items()}
-
             outputs = model(**batch)
             logits = outputs.logits.float()
             pred_ids = torch.argmax(logits, dim=-1).detach().cpu().tolist()
-
             for sid, pid in zip(ids, pred_ids):
                 pred_map[sid] = all_classes[int(pid)]
-
             if step % 100 == 0:
                 print(f"step {step}/{len(loader)}")
 
     print("Build submission...")
     fieldnames, rows = load_sample_submission(SAMPLE_SUB_PATH)
-
     missing = 0
     for row in rows:
         sid = row["id"]
@@ -216,12 +307,10 @@ def main():
             row["action"] = pred_map[sid]
         else:
             missing += 1
-
     if missing:
         print(f"Warning: missing predictions for {missing} rows")
 
     save_submission(OUT_PATH, fieldnames, rows)
-
     print(f"Saved: {OUT_PATH} rows={len(rows)}")
     print("Done.")
 
