@@ -32,6 +32,8 @@ LR = float(os.environ.get("LR", 2e-5))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.01)) 
 WARMUP_RATIO = float(os.environ.get("WARMUP_RATIO", 0.06)) 
 TEXT_MODE = os.environ.get("TEXT_MODE", "eda_state").strip().lower()
+USE_CLASS_WEIGHT = os.environ.get("USE_CLASS_WEIGHT", "0") == "1"
+WEIGHT_MODE = os.environ.get("WEIGHT_MODE", "sqrt_inv")
 
 ALL_CLASSES = [
     "read_file", "grep_search", "list_directory", "glob_pattern",
@@ -42,6 +44,20 @@ ALL_CLASSES = [
 
 LABEL2ID = {label: i for i, label in enumerate(ALL_CLASSES)}
 ID2LABEL = {i: label for label, i in LABEL2ID.items()}
+
+
+def compute_class_weights(labels, num_classes, mode="sqrt_inv"):
+    """클래스 빈도 기반 가중치 (평균 1로 정규화)."""
+    counts = np.bincount(labels, minlength=num_classes).astype(float)
+    counts = np.maximum(counts, 1)
+    if mode == "sqrt_inv":
+        weights = 1.0 / np.sqrt(counts)
+    elif mode == "inv":
+        weights = 1.0 / counts
+    else:
+        weights = np.ones(num_classes)
+    weights = weights / weights.mean()  # 평균 1 → loss 스케일/LR 유지
+    return torch.tensor(weights, dtype=torch.float)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT_DIR / "data"
@@ -574,7 +590,16 @@ def evaluate(model, loader, device, return_logits=False):
     return macro_f1, all_ids, all_labels, all_preds, None
 
 
-def save_val_outputs(save_dir, val_rows, val_ids, y_true, y_pred, logits, best_f1):
+def save_val_outputs(
+    save_dir,
+    val_rows,
+    val_ids,
+    y_true,
+    y_pred,
+    logits,
+    best_f1,
+    best_epoch,
+):
     save_dir.mkdir(parents=True, exist_ok=True)
 
     id_to_row = {r["id"]: r for r in val_rows}
@@ -617,6 +642,7 @@ def save_val_outputs(save_dir, val_rows, val_ids, y_true, y_pred, logits, best_f
         json.dump(
             {
                 "best_val_macro_f1": float(best_f1),
+                "best_epoch": int(best_epoch),
                 "num_val": len(val_ids),
                 "all_classes": ALL_CLASSES,
                 "model_name": MODEL_NAME,
@@ -678,6 +704,16 @@ def main():
     model.float()
     model.to(device)
 
+    criterion = None
+    if USE_CLASS_WEIGHT:
+        class_weights = compute_class_weights(
+            train_labels, num_classes=len(ALL_CLASSES), mode=WEIGHT_MODE
+        ).to(device)
+        print(f"class weights ({WEIGHT_MODE}):")
+        for name, w in zip(ALL_CLASSES, class_weights.cpu().numpy()):
+            print(f"  {name:18s} {w:.3f}")
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+
     train_ids = [r["id"] for r in train_rows]
     val_ids = [r["id"] for r in val_rows]
     train_ds = ActionDataset(train_texts, train_labels, train_ids)
@@ -717,6 +753,7 @@ def main():
     )
 
     best_f1 = -1.0
+    best_epoch = 0
     SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(1, EPOCHS + 1):
@@ -730,8 +767,12 @@ def main():
 
             optimizer.zero_grad(set_to_none=True)
 
-            outputs = model(**batch, labels=labels_batch)
-            loss = outputs.loss
+            if criterion is not None:
+                outputs = model(**batch)
+                loss = criterion(outputs.logits, labels_batch)
+            else:
+                outputs = model(**batch, labels=labels_batch)
+                loss = outputs.loss
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -763,7 +804,11 @@ def main():
 
         if val_f1 > best_f1:
             best_f1 = val_f1
-            print(f"New best F1: {best_f1:.4f}. Saving to {SAVE_DIR}")
+            best_epoch = epoch
+            print(
+                f"New best F1: {best_f1:.4f} at epoch {best_epoch}. "
+                f"Saving to {SAVE_DIR}"
+            )
 
             model.save_pretrained(SAVE_DIR)
             tokenizer.save_pretrained(SAVE_DIR)
@@ -775,6 +820,7 @@ def main():
                         "label2id": LABEL2ID,
                         "id2label": ID2LABEL,
                         "best_val_macro_f1": best_f1,
+                        "best_epoch": best_epoch,
                         "model_name": MODEL_NAME,
                         "text_mode": TEXT_MODE,
                         "max_len": MAX_LEN,
@@ -794,10 +840,12 @@ def main():
                 y_pred=y_pred,
                 logits=val_logits,
                 best_f1=best_f1,
+                best_epoch=best_epoch,
             )
 
     print("Training done.")
     print("Best Validation Macro-F1:", best_f1)
+    print("Best epoch:", best_epoch)
     print("Saved model dir:", SAVE_DIR)
 
 

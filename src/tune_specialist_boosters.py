@@ -425,6 +425,7 @@ def main():
     out_pred["specialist_correct"] = best_pred == y_true
     out_pred["specialist_changed"] = best_pred != base_pred
     out_pred.to_csv(out_dir / "val_predictions_with_specialists.csv", index=False)
+    np.save(out_dir / "val_logits_with_specialists.npy", best_logits)
 
     base_pc = per_class_metrics(y_true, base_pred, id2action).rename(columns={"precision": "base_precision", "recall": "base_recall", "f1": "base_f1"})
     sp_pc = per_class_metrics(y_true, best_pred, id2action).rename(columns={"precision": "specialist_precision", "recall": "specialist_recall", "f1": "specialist_f1"})
@@ -448,6 +449,7 @@ def main():
     print(" -", out_dir / "specialist_summary.json")
     print(" -", out_dir / "per_class_specialist_delta.csv")
     print(" -", out_dir / "val_predictions_with_specialists.csv")
+    print(" -", out_dir / "val_logits_with_specialists.npy")
 
 
 if __name__ == "__main__":

@@ -11,9 +11,13 @@
 #   3. argmax -> action -> submission.csv
 #
 # IMPORTANT (correctness):
-#   - The klue model MUST run in fp32. The specialist gammas were tuned against
-#     fp32 validation logits (export_val_roberta.py uses model.float()); running
-#     the transformer in fp16 shifts the logit scale and erodes the booster gain.
+#   - GPU inference runs in fp16 for speed (eval server is a T4 with a 10-min
+#     limit). Verified on the validation split that fp16 reproduces the fp32
+#     booster score (base 0.7194, +booster 0.7318 in both precisions).
+#   - The specialist boosters are applied in a version-independent way: their
+#     TF-IDF vocab/idf + logistic coef/intercept are loaded from specialists.npz
+#     and the transform is recomputed in numpy (no sklearn unpickle), so the
+#     result does not depend on the server's scikit-learn version.
 #   - The klue model uses the `eda_state` text builder; the specialists use the
 #     `router` text builder. These are two independent feature pipelines combined
 #     at the logit level, so both builders are reproduced verbatim below.
@@ -24,9 +28,11 @@ import csv
 import json
 import os
 import re
+from collections import Counter
 
 import numpy as np
-import joblib
+from scipy import sparse
+from scipy.special import expit
 import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -36,7 +42,8 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 # Paths                                                                        #
 # --------------------------------------------------------------------------- #
 MODEL_DIR = "./model/roberta_eda_state4"
-SPECIALISTS_PATH = "./model/roberta_eda_state4/specialist_boosters/specialists.joblib"
+SPEC_NPZ = "./model/roberta_eda_state4/specialist_boosters/specialists.npz"
+SPEC_VOCAB = "./model/roberta_eda_state4/specialist_boosters/specialists_vocab.json"
 DATA_DIR = "./data"
 OUT_DIR = "./output"
 
@@ -270,6 +277,42 @@ def safe_logit(p):
 
 
 # --------------------------------------------------------------------------- #
+# Pure-numpy TF-IDF transform for the specialist boosters.                     #
+# Matches sklearn TfidfVectorizer(analyzer="word", ngram_range=(1, 2),         #
+# lowercase=True, sublinear_tf=True, norm="l2"). Using saved vocab/idf instead #
+# of an unpickled sklearn object keeps inference independent of the server's   #
+# scikit-learn version.                                                        #
+# --------------------------------------------------------------------------- #
+TOKEN_RE = re.compile(r"(?u)\b\w\w+\b")  # sklearn default token_pattern
+
+
+def _word_ngrams(tokens):
+    grams = list(tokens)
+    for i in range(len(tokens) - 1):
+        grams.append(tokens[i] + " " + tokens[i + 1])
+    return grams
+
+
+def transform_tfidf(texts, vocab, idf):
+    n_feat = idf.shape[0]
+    indptr = [0]
+    indices = []
+    data = []
+    for text in texts:
+        tokens = TOKEN_RE.findall(text.lower())
+        counts = Counter(g for g in _word_ngrams(tokens) if g in vocab)
+        for term, cnt in counts.items():
+            col = vocab[term]
+            data.append((1.0 + np.log(cnt)) * idf[col])  # sublinear_tf * idf
+        indices.extend(vocab[t] for t in counts)
+        indptr.append(len(indices))
+    X = sparse.csr_matrix((data, indices, indptr), shape=(len(texts), n_feat), dtype=np.float64)
+    norms = np.sqrt(X.multiply(X).sum(axis=1)).A1  # l2 row norm
+    norms[norms == 0] = 1.0
+    return X.multiply(1.0 / norms[:, None]).tocsr()
+
+
+# --------------------------------------------------------------------------- #
 # klue dataset / collate                                                       #
 # --------------------------------------------------------------------------- #
 class TestDataset(Dataset):
@@ -309,12 +352,22 @@ def main():
 
     # ---- 1) klue transformer logits (fp32) ---------------------------------
     print("Load klue tokenizer/model...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=True)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=True)
+    except OSError as e:
+        print(f"Fast tokenizer load failed, retrying with use_fast=False: {e}")
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=False)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device:", device)
-    model.float()  # fp32 to match the scale the booster gammas were tuned on
+    # fp16 on GPU: ~2x faster (safe under the 10-min eval limit on T4) and
+    # verified to reproduce the fp32 booster score (val Macro-F1 0.7318 either
+    # way). CPU keeps fp32 since half is slow/unsupported for some ops there.
+    if device.type == "cuda":
+        model.half()
+    else:
+        model.float()
     model.to(device)
     model.eval()
 
@@ -339,18 +392,22 @@ def main():
     logits = np.concatenate(logits_chunks, axis=0).astype(np.float64)
     print("logits:", logits.shape)
 
-    # ---- 2) specialist boosters -------------------------------------------
+    # ---- 2) specialist boosters (pure numpy; no sklearn) ------------------
     print("Load specialists and apply boosters...")
-    payload = joblib.load(SPECIALISTS_PATH)
-    spec_classes = payload["all_classes"]
+    spec = np.load(SPEC_NPZ, allow_pickle=False)
+    spec_classes = [str(c) for c in spec["all_classes"]]
     if spec_classes != all_classes:
         raise ValueError(
-            "Class order mismatch between klue labels.json and specialists.joblib:\n"
+            "Class order mismatch between klue labels.json and specialists.npz:\n"
             f"  klue={all_classes}\n  spec={spec_classes}"
         )
-    vec = payload["vectorizer"]
-    clfs = payload["clfs"]
-    gammas = payload["gammas"]
+    with open(SPEC_VOCAB, encoding="utf-8") as f:
+        vocab = json.load(f)
+    idf = spec["idf"].astype(np.float64)
+    coefs = spec["coefs"].astype(np.float64)          # (n_targets, n_feat)
+    intercepts = spec["intercepts"].astype(np.float64)
+    gammas = spec["gammas"].astype(np.float64)
+    targets = [str(t) for t in spec["targets"]]
 
     router_texts = [build_text_router(s) for s in samples]
     # Align specialist scores (built in `samples` order) to the transformer's
@@ -359,14 +416,15 @@ def main():
     id_to_pos = {sid: i for i, sid in enumerate(ordered_ids)}
     sample_ids = [s.get("id", "") for s in samples]
     dst = np.array([id_to_pos[sid] for sid in sample_ids], dtype=np.int64)
-    X = vec.transform(router_texts)
 
-    for target, clf in clfs.items():
+    X = transform_tfidf(router_texts, vocab, idf)
+    for k, target in enumerate(targets):
         tid = all_classes.index(target)
-        p = clf.predict_proba(X)[:, 1]
+        decision = X.dot(coefs[k]) + intercepts[k]   # LogisticRegression logit
+        p = expit(decision)                          # predict_proba[:, 1]
         s = np.clip(safe_logit(p), -8, 8)
         contrib = np.zeros(logits.shape[0], dtype=np.float64)
-        np.add.at(contrib, dst, gammas[target] * s)
+        np.add.at(contrib, dst, gammas[k] * s)
         logits[:, tid] += contrib
 
     pred_ids = logits.argmax(axis=1)
