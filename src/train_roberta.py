@@ -34,6 +34,8 @@ WARMUP_RATIO = float(os.environ.get("WARMUP_RATIO", 0.06))
 TEXT_MODE = os.environ.get("TEXT_MODE", "eda_state").strip().lower()
 USE_CLASS_WEIGHT = os.environ.get("USE_CLASS_WEIGHT", "0") == "1"
 WEIGHT_MODE = os.environ.get("WEIGHT_MODE", "sqrt_inv")
+LOSS_TYPE = os.environ.get("LOSS_TYPE", "ce").strip().lower()   # ce | focal
+FOCAL_GAMMA = float(os.environ.get("FOCAL_GAMMA", "2.0"))
 
 ALL_CLASSES = [
     "read_file", "grep_search", "list_directory", "glob_pattern",
@@ -58,6 +60,24 @@ def compute_class_weights(labels, num_classes, mode="sqrt_inv"):
         weights = np.ones(num_classes)
     weights = weights / weights.mean()  # 평균 1 → loss 스케일/LR 유지
     return torch.tensor(weights, dtype=torch.float)
+
+
+class FocalLoss(torch.nn.Module):
+    """Multiclass Focal Loss. weight = per-class alpha (없으면 균등)."""
+
+    def __init__(self, gamma=2.0, weight=None):
+        super().__init__()
+        self.gamma = gamma
+        self.weight = weight  # tensor[num_classes] or None
+
+    def forward(self, logits, target):
+        logp = torch.nn.functional.log_softmax(logits, dim=-1)
+        logpt = logp.gather(1, target.unsqueeze(1)).squeeze(1)  # log p_t
+        pt = logpt.exp()
+        focal = (1.0 - pt) ** self.gamma * (-logpt)
+        if self.weight is not None:
+            focal = focal * self.weight.gather(0, target)  # alpha_t
+        return focal.mean()
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT_DIR / "data"
@@ -704,7 +724,7 @@ def main():
     model.float()
     model.to(device)
 
-    criterion = None
+    class_weights = None
     if USE_CLASS_WEIGHT:
         class_weights = compute_class_weights(
             train_labels, num_classes=len(ALL_CLASSES), mode=WEIGHT_MODE
@@ -712,7 +732,17 @@ def main():
         print(f"class weights ({WEIGHT_MODE}):")
         for name, w in zip(ALL_CLASSES, class_weights.cpu().numpy()):
             print(f"  {name:18s} {w:.3f}")
+
+    criterion = None
+    if LOSS_TYPE == "focal":
+        criterion = FocalLoss(gamma=FOCAL_GAMMA, weight=class_weights)
+        print(f"loss: focal (gamma={FOCAL_GAMMA}, "
+              f"alpha={'class_weights' if class_weights is not None else 'none'})")
+    elif class_weights is not None:
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+        print("loss: weighted CE")
+    else:
+        print("loss: CE (model built-in)")
 
     train_ids = [r["id"] for r in train_rows]
     val_ids = [r["id"] for r in val_rows]
