@@ -29,7 +29,7 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
 ALL_CLASSES = [
     "read_file", "grep_search", "list_directory", "glob_pattern",
@@ -65,6 +65,10 @@ def get_prev_action(sample):
 def get_step_from_id(sid: str) -> str:
     m = re.search(r"step_(\d+)", str(sid))
     return m.group(1) if m else "none"
+
+
+def get_session_id(sid: str) -> str:
+    return re.sub(r"-step_\d+$", "", str(sid))
 
 
 def compact_history(sample, max_turns=10):
@@ -173,6 +177,7 @@ def load_rows(data_dir: Path, text_mode: str):
         label_name = labels[sid]
         rows.append({
             "id": sid,
+            "session_id": get_session_id(sid),
             "label": LABEL2ID[label_name],
             "label_name": label_name,
             "text": build_text(s, mode=text_mode),
@@ -180,9 +185,18 @@ def load_rows(data_dir: Path, text_mode: str):
     return rows
 
 
-def split_like_train(rows, seed=42):
+def split_like_train(rows, seed=42, split_mode="row"):
     labels = [r["label"] for r in rows]
-    return train_test_split(rows, test_size=0.2, stratify=labels, random_state=seed)
+    if split_mode == "row":
+        return train_test_split(rows, test_size=0.2, stratify=labels, random_state=seed)
+    if split_mode == "group":
+        groups = [r["session_id"] for r in rows]
+        splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
+        train_idx, val_idx = next(splitter.split(rows, labels, groups))
+        train_rows = [rows[i] for i in train_idx]
+        val_rows = [rows[i] for i in val_idx]
+        return train_rows, val_rows
+    raise ValueError(f"unknown split_mode={split_mode}. Use row or group.")
 
 
 def align_val_rows(split_val_rows, val_df):
@@ -303,6 +317,7 @@ def main():
     ap.add_argument("--val_logits", required=True)
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--split_mode", choices=["row", "group"], default="row")
     ap.add_argument("--modes", default="router,prompt_meta,prompt")
     ap.add_argument("--targets", default=",".join(DEFAULT_TARGETS))
     ap.add_argument("--gammas", default=",".join(map(str, DEFAULT_GAMMAS)))
@@ -326,6 +341,7 @@ def main():
 
     print("===== Specialist booster tuning =====")
     print("Base Macro-F1:", base_f1, "| Acc:", base_acc)
+    print("SPLIT_MODE:", args.split_mode)
 
     modes = parse_list(args.modes, str)
     targets = parse_list(args.targets, str)
@@ -337,7 +353,11 @@ def main():
     for mode in modes:
         print(f"\n[INFO] Training specialist mode={mode}")
         rows = load_rows(data_dir, text_mode=mode)
-        train_rows, val_rows_split = split_like_train(rows, seed=args.seed)
+        train_rows, val_rows_split = split_like_train(
+            rows,
+            seed=args.seed,
+            split_mode=args.split_mode,
+        )
         val_rows = align_val_rows(val_rows_split, val_df)
         scores, diag = train_specialists_for_mode(
             train_rows, val_rows, targets, id2action, mode,

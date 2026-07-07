@@ -4,7 +4,6 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 
@@ -18,6 +17,7 @@ def parse_args():
     parser.add_argument("--max_len", type=int, default=512)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--split_mode", choices=["row", "group"], default="row")
     return parser.parse_args()
 
 
@@ -26,6 +26,7 @@ def main():
 
     os.environ["TEXT_MODE"] = args.text_mode
     os.environ["MAX_LEN"] = str(args.max_len)
+    os.environ["SPLIT_MODE"] = args.split_mode
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
     import train_roberta as tr
@@ -37,17 +38,17 @@ def main():
     print("Device:", device)
     print("MODEL_DIR:", model_dir)
     print("TEXT_MODE:", args.text_mode)
+    print("SPLIT_MODE:", args.split_mode)
     print("OUTPUT_DIR:", output_dir)
 
     texts, labels, rows = tr.load_data()
 
-    _, val_texts, _, val_labels, _, val_rows = train_test_split(
+    _, val_texts, _, val_labels, _, val_rows = tr.split_train_val(
         texts,
         labels,
         rows,
-        test_size=0.2,
-        stratify=labels,
-        random_state=args.seed,
+        split_mode=args.split_mode,
+        seed=args.seed,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=True)
@@ -82,6 +83,7 @@ def main():
         y_pred=y_pred,
         logits=val_logits,
         best_f1=val_f1,
+        best_epoch=0,
     )
 
 

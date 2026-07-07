@@ -11,7 +11,7 @@ from collections import Counter
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from sklearn.metrics import f1_score, classification_report
 
 from transformers import (
@@ -22,7 +22,7 @@ from transformers import (
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-SEED = 42
+SEED = int(os.environ.get("SEED", 42))
 # 한국어 특화 모델
 MODEL_NAME = os.environ.get("MODEL_NAME", "klue/roberta-base")
 MAX_LEN = int(os.environ.get("MAX_LEN", 512))
@@ -32,10 +32,16 @@ LR = float(os.environ.get("LR", 2e-5))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.01)) 
 WARMUP_RATIO = float(os.environ.get("WARMUP_RATIO", 0.06)) 
 TEXT_MODE = os.environ.get("TEXT_MODE", "eda_state").strip().lower()
+SPLIT_MODE = os.environ.get("SPLIT_MODE", "row").strip().lower()
 USE_CLASS_WEIGHT = os.environ.get("USE_CLASS_WEIGHT", "0") == "1"
 WEIGHT_MODE = os.environ.get("WEIGHT_MODE", "sqrt_inv")
 LOSS_TYPE = os.environ.get("LOSS_TYPE", "ce").strip().lower()   # ce | focal
 FOCAL_GAMMA = float(os.environ.get("FOCAL_GAMMA", "2.0"))
+SAVE_EPOCH_CHECKPOINTS = {
+    int(x.strip())
+    for x in os.environ.get("SAVE_EPOCH_CHECKPOINTS", "").split(",")
+    if x.strip()
+}
 
 ALL_CLASSES = [
     "read_file", "grep_search", "list_directory", "glob_pattern",
@@ -113,6 +119,10 @@ def get_prev_action(sample):
 def get_step_from_id(sid):
     m = re.search(r"step_(\d+)", str(sid))
     return m.group(1) if m else "none"
+
+
+def get_session_id(sid):
+    return re.sub(r"-step_\d+$", "", str(sid))
 
 
 def bucket_int(value, cuts):
@@ -484,6 +494,7 @@ def load_data():
         y.append(label_id)
         rows.append({
             "id": sid,
+            "session_id": get_session_id(sid),
             "label": label_id,
             "current_prompt": str(s.get("current_prompt", "")),
             "last_action": actions[-1] if actions else "none",
@@ -496,6 +507,39 @@ def load_data():
         })
 
     return texts, y, rows
+
+
+def split_train_val(texts, labels, rows, split_mode=SPLIT_MODE, seed=SEED):
+    if split_mode == "row":
+        return train_test_split(
+            texts,
+            labels,
+            rows,
+            test_size=0.2,
+            stratify=labels,
+            random_state=seed,
+        )
+
+    if split_mode == "group":
+        groups = [r["session_id"] for r in rows]
+        splitter = GroupShuffleSplit(
+            n_splits=1,
+            test_size=0.2,
+            random_state=seed,
+        )
+        train_idx, val_idx = next(splitter.split(texts, labels, groups))
+
+        train_idx = train_idx.tolist()
+        val_idx = val_idx.tolist()
+        train_texts = [texts[i] for i in train_idx]
+        val_texts = [texts[i] for i in val_idx]
+        train_labels = [labels[i] for i in train_idx]
+        val_labels = [labels[i] for i in val_idx]
+        train_rows = [rows[i] for i in train_idx]
+        val_rows = [rows[i] for i in val_idx]
+        return train_texts, val_texts, train_labels, val_labels, train_rows, val_rows
+
+    raise ValueError("Unknown SPLIT_MODE=" f"{split_mode}. Use 'row' or 'group'.")
 
 
 def report_token_length_stats(tokenizer, texts, sample_size=5000):
@@ -674,6 +718,7 @@ def save_val_outputs(
                 "weight_decay": WEIGHT_DECAY,
                 "warmup_ratio": WARMUP_RATIO,
                 "seed": SEED,
+                "split_mode": SPLIT_MODE,
             },
             f,
             ensure_ascii=False,
@@ -686,6 +731,37 @@ def save_val_outputs(
     print(" -", save_dir / "val_info.json")
 
 
+def save_model_bundle(save_dir, model, tokenizer, epoch, val_f1):
+    save_dir.mkdir(parents=True, exist_ok=True)
+    model.save_pretrained(save_dir)
+    tokenizer.save_pretrained(save_dir)
+
+    with open(save_dir / "labels.json", "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "all_classes": ALL_CLASSES,
+                "label2id": LABEL2ID,
+                "id2label": ID2LABEL,
+                "val_macro_f1": float(val_f1),
+                "checkpoint_epoch": int(epoch),
+                "model_name": MODEL_NAME,
+                "text_mode": TEXT_MODE,
+                "max_len": MAX_LEN,
+                "epochs": EPOCHS,
+                "lr": LR,
+                "seed": SEED,
+                "split_mode": SPLIT_MODE,
+                "use_class_weight": USE_CLASS_WEIGHT,
+                "weight_mode": WEIGHT_MODE,
+                "loss_type": LOSS_TYPE,
+                "focal_gamma": FOCAL_GAMMA,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+
 def main():
     set_seed(SEED)
 
@@ -694,22 +770,32 @@ def main():
     print("Model:", MODEL_NAME)
     print("MAX_LEN:", MAX_LEN, "| BATCH_SIZE:", BATCH_SIZE, "| EPOCHS:", EPOCHS)
     print("TEXT_MODE:", TEXT_MODE)
+    print("SPLIT_MODE:", SPLIT_MODE)
     print("SAVE_DIR:", SAVE_DIR)
+    if SAVE_EPOCH_CHECKPOINTS:
+        print("SAVE_EPOCH_CHECKPOINTS:", sorted(SAVE_EPOCH_CHECKPOINTS))
 
     texts, labels, rows = load_data()
     print("samples:", len(texts), "| classes:", len(set(labels)))
     print("label counts:", Counter(labels))
 
-    train_texts, val_texts, train_labels, val_labels, train_rows, val_rows = train_test_split(
+    train_texts, val_texts, train_labels, val_labels, train_rows, val_rows = split_train_val(
         texts,
         labels,
         rows,
-        test_size=0.2,
-        stratify=labels,
-        random_state=SEED,
     )
 
     print("train:", len(train_texts), "| val:", len(val_texts))
+    train_sessions = {r["session_id"] for r in train_rows}
+    val_sessions = {r["session_id"] for r in val_rows}
+    print(
+        "sessions train:",
+        len(train_sessions),
+        "| val:",
+        len(val_sessions),
+        "| overlap:",
+        len(train_sessions & val_sessions),
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
     report_token_length_stats(tokenizer, texts)
@@ -832,6 +918,11 @@ def main():
             zero_division=0,
         ))
 
+        if epoch in SAVE_EPOCH_CHECKPOINTS:
+            ckpt_dir = SAVE_DIR / f"checkpoint-epoch{epoch}"
+            print(f"Saving epoch checkpoint to {ckpt_dir}")
+            save_model_bundle(ckpt_dir, model, tokenizer, epoch, val_f1)
+
         if val_f1 > best_f1:
             best_f1 = val_f1
             best_epoch = epoch
@@ -856,6 +947,8 @@ def main():
                         "max_len": MAX_LEN,
                         "epochs": EPOCHS,
                         "lr": LR,
+                        "seed": SEED,
+                        "split_mode": SPLIT_MODE,
                     },
                     f,
                     ensure_ascii=False,
