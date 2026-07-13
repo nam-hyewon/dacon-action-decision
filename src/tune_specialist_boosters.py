@@ -185,7 +185,7 @@ def load_rows(data_dir: Path, text_mode: str):
     return rows
 
 
-def split_like_train(rows, seed=42, split_mode="row"):
+def split_like_train(rows, seed=42, split_mode="row", fold_file="", fold_id=0):
     labels = [r["label"] for r in rows]
     if split_mode == "row":
         return train_test_split(rows, test_size=0.2, stratify=labels, random_state=seed)
@@ -196,7 +196,22 @@ def split_like_train(rows, seed=42, split_mode="row"):
         train_rows = [rows[i] for i in train_idx]
         val_rows = [rows[i] for i in val_idx]
         return train_rows, val_rows
-    raise ValueError(f"unknown split_mode={split_mode}. Use row or group.")
+    if split_mode == "fold":
+        if not fold_file:
+            raise ValueError("--split_mode fold requires --fold_file")
+        id_to_fold = {}
+        with open(fold_file, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                id_to_fold[row["id"]] = int(row["fold"])
+        missing = [r["id"] for r in rows if r["id"] not in id_to_fold]
+        if missing:
+            raise ValueError(f"fold file missing {len(missing)} ids. First: {missing[:3]}")
+        train_rows = [r for r in rows if id_to_fold[r["id"]] != fold_id]
+        val_rows = [r for r in rows if id_to_fold[r["id"]] == fold_id]
+        if not val_rows:
+            raise ValueError(f"fold_id={fold_id} has no validation rows in {fold_file}")
+        return train_rows, val_rows
+    raise ValueError(f"unknown split_mode={split_mode}. Use row, group, or fold.")
 
 
 def align_val_rows(split_val_rows, val_df):
@@ -317,7 +332,9 @@ def main():
     ap.add_argument("--val_logits", required=True)
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--split_mode", choices=["row", "group"], default="row")
+    ap.add_argument("--split_mode", choices=["row", "group", "fold"], default="row")
+    ap.add_argument("--fold_file", default="")
+    ap.add_argument("--fold_id", type=int, default=0)
     ap.add_argument("--modes", default="router,prompt_meta,prompt")
     ap.add_argument("--targets", default=",".join(DEFAULT_TARGETS))
     ap.add_argument("--gammas", default=",".join(map(str, DEFAULT_GAMMAS)))
@@ -342,6 +359,9 @@ def main():
     print("===== Specialist booster tuning =====")
     print("Base Macro-F1:", base_f1, "| Acc:", base_acc)
     print("SPLIT_MODE:", args.split_mode)
+    if args.split_mode == "fold":
+        print("FOLD_FILE:", args.fold_file)
+        print("FOLD_ID:", args.fold_id)
 
     modes = parse_list(args.modes, str)
     targets = parse_list(args.targets, str)
@@ -357,6 +377,8 @@ def main():
             rows,
             seed=args.seed,
             split_mode=args.split_mode,
+            fold_file=args.fold_file,
+            fold_id=args.fold_id,
         )
         val_rows = align_val_rows(val_rows_split, val_df)
         scores, diag = train_specialists_for_mode(

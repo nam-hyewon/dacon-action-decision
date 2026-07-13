@@ -1,6 +1,7 @@
 ### mid4 포함한 결과
 
 import csv
+import hashlib
 import json
 import os
 import random
@@ -11,7 +12,7 @@ from collections import Counter
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import GroupShuffleSplit, train_test_split
+from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold, train_test_split
 from sklearn.metrics import f1_score, classification_report
 
 from transformers import (
@@ -33,6 +34,8 @@ WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.01))
 WARMUP_RATIO = float(os.environ.get("WARMUP_RATIO", 0.06)) 
 TEXT_MODE = os.environ.get("TEXT_MODE", "eda_state").strip().lower()
 SPLIT_MODE = os.environ.get("SPLIT_MODE", "row").strip().lower()
+FOLD_FILE = os.environ.get("FOLD_FILE", "").strip()
+FOLD_ID = int(os.environ.get("FOLD_ID", 0))
 USE_CLASS_WEIGHT = os.environ.get("USE_CLASS_WEIGHT", "0") == "1"
 WEIGHT_MODE = os.environ.get("WEIGHT_MODE", "sqrt_inv")
 LOSS_TYPE = os.environ.get("LOSS_TYPE", "ce").strip().lower()   # ce | focal
@@ -43,7 +46,8 @@ SAVE_EPOCH_CHECKPOINTS = {
     if x.strip()
 }
 
-ALL_CLASSES = [
+_classes_env = os.environ.get("ACTION_CLASSES", "").strip()
+ALL_CLASSES = [c.strip() for c in _classes_env.split(",") if c.strip()] or [
     "read_file", "grep_search", "list_directory", "glob_pattern",
     "edit_file", "write_file", "apply_patch",
     "run_bash", "run_tests", "lint_or_typecheck",
@@ -86,9 +90,10 @@ class FocalLoss(torch.nn.Module):
         return focal.mean()
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT_DIR / "data"
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(ROOT_DIR / "data")))
 SAVE_NAME = os.environ.get("SAVE_NAME", f"roberta_{TEXT_MODE}_{EPOCHS}ep")
 SAVE_DIR = ROOT_DIR / "submit" / "model" / SAVE_NAME
+EXCLUDE_AUG_FROM_VAL = os.environ.get("EXCLUDE_AUG_FROM_VAL", "0") == "1"
 
 
 def set_seed(seed=42):
@@ -125,6 +130,11 @@ def get_session_id(sid):
     return re.sub(r"-step_\d+$", "", str(sid))
 
 
+def split_signature(rows):
+    ids = "\n".join(sorted(str(r["id"]) for r in rows))
+    return hashlib.sha1(ids.encode("utf-8")).hexdigest()[:12]
+
+
 def bucket_int(value, cuts):
     try:
         v = int(value)
@@ -141,6 +151,17 @@ def clip_text(value, max_chars):
     if len(text) <= max_chars:
         return text
     return text[:max_chars]
+
+
+def arg_path(args):
+    """B1 diet: reduce an assistant_action's args dict to just its file-path signal."""
+    if not isinstance(args, dict):
+        return ""
+    for k in ("path", "file", "scope", "target", "pattern"):
+        v = args.get(k)
+        if isinstance(v, str) and v:
+            return v
+    return ""
 
 
 def compact_history(sample, max_turns=10):
@@ -448,6 +469,176 @@ def build_text_eda_state_mid(sample):
     ])
 
 
+def build_text_eda_state_diet(sample):
+    """B1 (handoff 5-1): diet serialization to fit the full signal in 512 tokens.
+    - no CURRENT_PROMPT repeat
+    - history args -> file path only
+    - result_summary -> 40 chars
+    - last 3 user utterances
+    - up to 12 history action turns
+    target char dist: mean ~366 / p90 ~562.
+    """
+    meta = sample.get("session_meta", {})
+    workspace = meta.get("workspace", {})
+    history = sample.get("history", [])
+    current_prompt = str(sample.get("current_prompt", ""))
+
+    user_turns = [
+        str(h.get("content", ""))
+        for h in history
+        if h.get("role") == "user"
+    ]
+
+    hist_lines = []
+    for h in history:
+        if h.get("role") == "assistant_action":
+            name = str(h.get("name", ""))
+            path = clip_text(arg_path(h.get("args", {})), 40)
+            res = clip_text(h.get("result_summary", ""), 40)
+            hist_lines.append(f"{name} | {path} | {res}")
+    hist_lines = hist_lines[-12:]
+
+    prompt_len = len(current_prompt)
+    history_len = len(history)
+    turn_index = meta.get("turn_index", 0)
+
+    return "\n".join([
+        "[EDA_STATE_DIET]",
+        "[CURRENT_PROMPT]",
+        current_prompt,
+        "[ACTION_STATE]",
+        f"last_action: {get_last_action(sample)}",
+        f"prev_action: {get_prev_action(sample)}",
+        "[EDA_FEATURES]",
+        f"prompt_len: {prompt_len}",
+        f"prompt_len_bucket: {bucket_int(prompt_len, [('short', 45), ('medium', 80), ('long', 120)])}",
+        f"is_first_turn: {str(history_len == 0)}",
+        f"history_len: {history_len}",
+        f"turn_index: {turn_index}",
+        f"step: {get_step_from_id(sample.get('id', ''))}",
+        f"last_ci_status: {workspace.get('last_ci_status', '')}",
+        f"git_dirty: {workspace.get('git_dirty', '')}",
+        "[RECENT_USER_REQUESTS]",
+        "\n".join(user_turns[-3:]),
+        "[COMPACT_HISTORY]",
+        "\n".join(hist_lines),
+    ])
+
+
+def build_text_explore_front(sample):
+    """Front-load signals that separate read/grep/list/glob.
+
+    This view is a gate experiment for the exploration cluster. It keeps the
+    current prompt first, then puts path/pattern/result/open-file signals before
+    generic metadata so truncation preserves the fields most relevant to
+    read_file vs grep_search vs list_directory vs glob_pattern.
+    """
+    meta = sample.get("session_meta", {}) or {}
+    workspace = meta.get("workspace", {}) or {}
+    history = sample.get("history", []) or []
+    current_prompt = str(sample.get("current_prompt", ""))
+
+    actions = get_actions(sample)
+    assistant = [
+        h for h in history
+        if h.get("role") == "assistant_action"
+    ]
+    last = assistant[-1] if assistant else {}
+    prev = assistant[-2] if len(assistant) >= 2 else {}
+
+    def action_line(h, max_result=30):
+        if not h:
+            return "none"
+        name = str(h.get("name", ""))
+        args = h.get("args", {}) or {}
+        path = clip_text(arg_path(args), 50)
+        result = clip_text(h.get("result_summary", ""), max_result)
+        return f"{name} | target: {path} | result: {result}"
+
+    recent_action_lines = [action_line(h, 20) for h in assistant[-3:]]
+    open_files = " ".join(map(str, workspace.get("open_files", []) or []))
+    language_mix = workspace.get("language_mix", {}) or {}
+    main_lang = max(language_mix, key=language_mix.get) if language_mix else "none"
+
+    lower = current_prompt.lower()
+    cue_flags = []
+    for name, words in {
+        "cue_read": ["open", "read", "cat ", "show", "열어", "읽", "보여", "확인"],
+        "cue_grep": ["grep", "search", "find", "where", "usage", "찾", "검색", "어디"],
+        "cue_list": ["list", "ls ", "tree", "what's in", "whats in", "뭐 있", "목록", "나열"],
+        "cue_glob": ["glob", "pattern", "matching", "all files", "every", "전부", "모든", "패턴"],
+    }.items():
+        if any(w in lower for w in words):
+            cue_flags.append(name)
+
+    return "\n".join([
+        "[EXPLORE_FRONT]",
+        "[CURRENT_PROMPT]",
+        current_prompt,
+        "[PROMPT_CUES]",
+        " ".join(cue_flags),
+        "[LAST_ACTION_DETAIL]",
+        action_line(last, 45),
+        "[PREV_ACTION_DETAIL]",
+        action_line(prev, 25),
+        "[OPEN_FILES]",
+        clip_text(open_files, 60),
+        "[RECENT_ACTION_TARGETS]",
+        "\n".join(recent_action_lines),
+        "[STATE]",
+        f"last_action: {get_last_action(sample)}",
+        f"prev_action: {get_prev_action(sample)}",
+        f"action_sequence: {' > '.join(actions[-8:])}",
+        f"turn_index: {meta.get('turn_index', '')}",
+        f"step: {get_step_from_id(sample.get('id', ''))}",
+        f"history_len: {len(history)}",
+        f"main_lang: {main_lang}",
+        f"last_ci_status: {workspace.get('last_ci_status', '')}",
+        f"git_dirty: {workspace.get('git_dirty', '')}",
+    ])
+
+
+def build_text_raw_serialized(sample):
+    """Raw-ish serialization baseline.
+
+    This intentionally avoids clever summarization: keep current_prompt up front,
+    repeat it, then dump session_meta and recent history with full args and
+    result_summary. With MAX_LEN=512, truncation is allowed to decide what fits.
+    """
+    current_prompt = str(sample.get("current_prompt", ""))
+    meta = sample.get("session_meta", {}) or {}
+    history = sample.get("history", []) or []
+    raw_history = []
+    for h in history:
+        if h.get("role") == "assistant_action":
+            raw_history.append({
+                "role": h.get("role"),
+                "name": h.get("name"),
+                "args": h.get("args", {}),
+                "result_summary": h.get("result_summary", ""),
+            })
+        else:
+            raw_history.append({
+                "role": h.get("role"),
+                "content": h.get("content", ""),
+            })
+    payload = {
+        "id": sample.get("id", ""),
+        "session_meta": meta,
+        "history": raw_history,
+        "current_prompt": current_prompt,
+    }
+    return "\n".join([
+        "[RAW_SERIALIZED]",
+        "[CURRENT_PROMPT]",
+        current_prompt,
+        "[CURRENT_PROMPT_REPEAT]",
+        current_prompt,
+        "[RAW_JSON]",
+        json.dumps(payload, ensure_ascii=False, sort_keys=True),
+    ])
+
+
 def build_text(sample):
     if TEXT_MODE == "full":
         return build_text_full(sample)
@@ -459,10 +650,16 @@ def build_text(sample):
         return build_text_eda_state_light(sample)
     if TEXT_MODE == "eda_state_mid":
         return build_text_eda_state_mid(sample)
+    if TEXT_MODE == "eda_state_diet":
+        return build_text_eda_state_diet(sample)
+    if TEXT_MODE == "explore_front":
+        return build_text_explore_front(sample)
+    if TEXT_MODE == "raw_serialized":
+        return build_text_raw_serialized(sample)
     raise ValueError(
         "Unknown TEXT_MODE="
         f"{TEXT_MODE}. Use 'full', 'router', 'eda_state', 'eda_state_light', "
-        "or 'eda_state_mid'."
+        "'eda_state_mid', 'eda_state_diet', 'explore_front', or 'raw_serialized'."
     )
 
 
@@ -494,8 +691,10 @@ def load_data():
         y.append(label_id)
         rows.append({
             "id": sid,
-            "session_id": get_session_id(sid),
+            "session_id": str(s.get("source_session_id") or get_session_id(sid)),
             "label": label_id,
+            "sample_weight": float(s.get("sample_weight", 1.0)),
+            "is_aug": bool(s.get("is_aug", False) or "__histaug_" in str(sid)),
             "current_prompt": str(s.get("current_prompt", "")),
             "last_action": actions[-1] if actions else "none",
             "prev_action": actions[-2] if len(actions) >= 2 else "none",
@@ -507,6 +706,22 @@ def load_data():
         })
 
     return texts, y, rows
+
+
+def take_indices(values, indices):
+    return [values[i] for i in indices]
+
+
+def load_fold_ids(fold_file, fold_id):
+    if not fold_file:
+        raise ValueError("SPLIT_MODE=fold requires FOLD_FILE=/path/to/folds_seed42.csv")
+
+    fold_path = Path(fold_file)
+    id_to_fold = {}
+    with open(fold_path, encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            id_to_fold[row["id"]] = int(row["fold"])
+    return id_to_fold, fold_path
 
 
 def split_train_val(texts, labels, rows, split_mode=SPLIT_MODE, seed=SEED):
@@ -539,7 +754,29 @@ def split_train_val(texts, labels, rows, split_mode=SPLIT_MODE, seed=SEED):
         val_rows = [rows[i] for i in val_idx]
         return train_texts, val_texts, train_labels, val_labels, train_rows, val_rows
 
-    raise ValueError("Unknown SPLIT_MODE=" f"{split_mode}. Use 'row' or 'group'.")
+    if split_mode == "fold":
+        id_to_fold, _ = load_fold_ids(FOLD_FILE, FOLD_ID)
+        missing = [r["id"] for r in rows if r["id"] not in id_to_fold]
+        if missing:
+            raise ValueError(f"FOLD_FILE is missing {len(missing)} ids. First: {missing[:3]}")
+
+        train_idx = [i for i, r in enumerate(rows) if id_to_fold[r["id"]] != FOLD_ID]
+        val_idx = [i for i, r in enumerate(rows) if id_to_fold[r["id"]] == FOLD_ID]
+        if EXCLUDE_AUG_FROM_VAL:
+            val_idx = [i for i in val_idx if not rows[i].get("is_aug", False)]
+        if not val_idx:
+            raise ValueError(f"FOLD_ID={FOLD_ID} has no validation rows in {FOLD_FILE}")
+
+        return (
+            take_indices(texts, train_idx),
+            take_indices(texts, val_idx),
+            take_indices(labels, train_idx),
+            take_indices(labels, val_idx),
+            take_indices(rows, train_idx),
+            take_indices(rows, val_idx),
+        )
+
+    raise ValueError("Unknown SPLIT_MODE=" f"{split_mode}. Use 'row', 'group', or 'fold'.")
 
 
 def report_token_length_stats(tokenizer, texts, sample_size=5000):
@@ -574,10 +811,11 @@ def report_token_length_stats(tokenizer, texts, sample_size=5000):
 
 
 class ActionDataset(Dataset):
-    def __init__(self, texts, labels=None, ids=None):
+    def __init__(self, texts, labels=None, ids=None, weights=None):
         self.texts = texts
         self.labels = labels
         self.ids = ids
+        self.weights = weights
 
     def __len__(self):
         return len(self.texts)
@@ -588,6 +826,8 @@ class ActionDataset(Dataset):
             item["id"] = self.ids[idx]
         if self.labels is not None:
             item["label"] = int(self.labels[idx])
+        if self.weights is not None:
+            item["weight"] = float(self.weights[idx])
         return item
 
 
@@ -609,6 +849,11 @@ def make_collate_fn(tokenizer):
                 [x["label"] for x in batch],
                 dtype=torch.long,
             )
+        if "weight" in batch[0]:
+            enc["sample_weights"] = torch.tensor(
+                [x["weight"] for x in batch],
+                dtype=torch.float,
+            )
 
         enc["_ids"] = ids
         return enc
@@ -628,6 +873,9 @@ def evaluate(model, loader, device, return_logits=False):
     for batch in loader:
         ids = batch.pop("_ids", [])
         labels = batch.pop("labels").to(device)
+        # sample_weights 는 loss 가중용이라 평가에선 쓰이지 않는다.
+        # 넘기면 HF forward() 가 unexpected kwarg 로 죽는다.
+        batch.pop("sample_weights", None)
         batch = {k: v.to(device) for k, v in batch.items()}
 
         outputs = model(**batch)
@@ -719,6 +967,9 @@ def save_val_outputs(
                 "warmup_ratio": WARMUP_RATIO,
                 "seed": SEED,
                 "split_mode": SPLIT_MODE,
+                "fold_file": FOLD_FILE,
+                "fold_id": FOLD_ID if SPLIT_MODE == "fold" else None,
+                "val_split_signature": split_signature(val_rows),
             },
             f,
             ensure_ascii=False,
@@ -751,6 +1002,8 @@ def save_model_bundle(save_dir, model, tokenizer, epoch, val_f1):
                 "lr": LR,
                 "seed": SEED,
                 "split_mode": SPLIT_MODE,
+                "fold_file": FOLD_FILE,
+                "fold_id": FOLD_ID if SPLIT_MODE == "fold" else None,
                 "use_class_weight": USE_CLASS_WEIGHT,
                 "weight_mode": WEIGHT_MODE,
                 "loss_type": LOSS_TYPE,
@@ -771,6 +1024,9 @@ def main():
     print("MAX_LEN:", MAX_LEN, "| BATCH_SIZE:", BATCH_SIZE, "| EPOCHS:", EPOCHS)
     print("TEXT_MODE:", TEXT_MODE)
     print("SPLIT_MODE:", SPLIT_MODE)
+    if SPLIT_MODE == "fold":
+        print("FOLD_FILE:", FOLD_FILE)
+        print("FOLD_ID:", FOLD_ID)
     print("SAVE_DIR:", SAVE_DIR)
     if SAVE_EPOCH_CHECKPOINTS:
         print("SAVE_EPOCH_CHECKPOINTS:", sorted(SAVE_EPOCH_CHECKPOINTS))
@@ -796,6 +1052,7 @@ def main():
         "| overlap:",
         len(train_sessions & val_sessions),
     )
+    print("val_split_signature:", split_signature(val_rows))
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
     report_token_length_stats(tokenizer, texts)
@@ -832,8 +1089,18 @@ def main():
 
     train_ids = [r["id"] for r in train_rows]
     val_ids = [r["id"] for r in val_rows]
-    train_ds = ActionDataset(train_texts, train_labels, train_ids)
-    val_ds = ActionDataset(val_texts, val_labels, val_ids)
+    train_weights = [float(r.get("sample_weight", 1.0)) for r in train_rows]
+    val_weights = [float(r.get("sample_weight", 1.0)) for r in val_rows]
+    if any(abs(w - 1.0) > 1e-9 for w in train_weights):
+        print(
+            "sample weights:",
+            "train min/max/mean",
+            f"{min(train_weights):.3f}/{max(train_weights):.3f}/{np.mean(train_weights):.3f}",
+            "| val min/max/mean",
+            f"{min(val_weights):.3f}/{max(val_weights):.3f}/{np.mean(val_weights):.3f}",
+        )
+    train_ds = ActionDataset(train_texts, train_labels, train_ids, train_weights)
+    val_ds = ActionDataset(val_texts, val_labels, val_ids, val_weights)
 
     collate_fn = make_collate_fn(tokenizer)
 
@@ -879,11 +1146,31 @@ def main():
         for step, batch in enumerate(train_loader, start=1):
             batch.pop("_ids", None)
             labels_batch = batch.pop("labels").to(device)
+            sample_weights = batch.pop("sample_weights", None)
+            if sample_weights is not None:
+                sample_weights = sample_weights.to(device)
             batch = {k: v.to(device) for k, v in batch.items()}
 
             optimizer.zero_grad(set_to_none=True)
 
-            if criterion is not None:
+            if sample_weights is not None:
+                outputs = model(**batch)
+                if criterion is not None and isinstance(criterion, FocalLoss):
+                    logp = torch.nn.functional.log_softmax(outputs.logits, dim=-1)
+                    logpt = logp.gather(1, labels_batch.unsqueeze(1)).squeeze(1)
+                    pt = logpt.exp()
+                    per_sample_loss = (1.0 - pt) ** criterion.gamma * (-logpt)
+                    if criterion.weight is not None:
+                        per_sample_loss = per_sample_loss * criterion.weight.gather(0, labels_batch)
+                else:
+                    per_sample_loss = torch.nn.functional.cross_entropy(
+                        outputs.logits,
+                        labels_batch,
+                        weight=class_weights,
+                        reduction="none",
+                    )
+                loss = (per_sample_loss * sample_weights).sum() / sample_weights.sum().clamp_min(1e-6)
+            elif criterion is not None:
                 outputs = model(**batch)
                 loss = criterion(outputs.logits, labels_batch)
             else:
@@ -949,6 +1236,9 @@ def main():
                         "lr": LR,
                         "seed": SEED,
                         "split_mode": SPLIT_MODE,
+                        "fold_file": FOLD_FILE,
+                        "fold_id": FOLD_ID if SPLIT_MODE == "fold" else None,
+                        "val_split_signature": split_signature(val_rows),
                     },
                     f,
                     ensure_ascii=False,
