@@ -1,0 +1,8 @@
+mode,gate,target_rate,actual_rate,use_deberta_n,alpha,bias_name,macro_f1,accuracy,base_weights
+low_base_conf,low_base_conf,0.05,0.05,3500,0.2,prev_full_bias,0.7539927208140463,0.7527571428571429,"{'kluebert': 0.51, 'tabular': 0.49}"
+low_base_margin,low_base_margin,0.1,0.1,7000,0.3,prev_full_bias,0.7548750770812159,0.7545857142857143,"{'kluebert': 0.51, 'tabular': 0.49}"
+low_base_margin,low_base_margin,0.12,0.12,8400,0.25,prev_full_bias,0.7552298767061593,0.7547,"{'kluebert': 0.51, 'tabular': 0.49}"
+low_base_conf,low_base_conf,0.2,0.2,14000,0.25,prev_full_bias,0.755958109067506,0.7550571428571429,"{'kluebert': 0.51, 'tabular': 0.49}"
+low_base_conf,low_base_conf,0.3,0.3,21000,0.25,prev_full_bias,0.75661585540748,0.7558857142857143,"{'kluebert': 0.51, 'tabular': 0.49}"
+low_base_conf,low_base_conf,0.3,0.3,21000,0.25,prev_full_bias,0.75661585540748,0.7558857142857143,"{'kluebert': 0.51, 'tabular': 0.49}"
+low_base_conf,low_base_conf,0.3,0.3,21000,0.25,prev_full_bias,0.75661585540748,0.7558857142857143,"{'kluebert': 0.51, 'tabular': 0.49}"

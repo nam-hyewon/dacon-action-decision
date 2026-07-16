@@ -1,0 +1,16 @@
+{
+  "models": {
+    "deberta": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_base_eda_state4_seed43_oof",
+    "kluebert": "team_4model_ensemble_07626/ensemble_07626/fold0_team/kluebert_mid5_lr15_oof",
+    "tabular": "team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_histgb_oof"
+  },
+  "normalization": "row_zscore_logits",
+  "search_step": 0.01,
+  "macro_f1": 0.7559438377809506,
+  "accuracy": 0.7560571428571429,
+  "weights": {
+    "deberta": 0.29,
+    "kluebert": 0.27,
+    "tabular": 0.44
+  }
+}

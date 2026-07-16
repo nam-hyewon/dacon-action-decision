@@ -1,0 +1,59 @@
+=== CLASSIFICATION REPORT ===
+                   precision    recall  f1-score   support
+
+        read_file     0.5681    0.5997    0.5834      1851
+      grep_search     0.6903    0.5499    0.6122      1982
+   list_directory     0.4014    0.6397    0.4933       866
+     glob_pattern     0.7418    0.6008    0.6639      1057
+        edit_file     0.9724    0.9776    0.9750      2234
+       write_file     0.9932    0.9932    0.9932       296
+      apply_patch     0.9418    0.9554    0.9486       965
+         run_bash     0.8433    0.8184    0.8307      1013
+        run_tests     0.7903    0.8388    0.8138       912
+lint_or_typecheck     0.7112    0.6521    0.6804       457
+         ask_user     0.7073    0.6667    0.6864       540
+        plan_task     0.6806    0.7276    0.7033       536
+       web_search     0.7432    0.6471    0.6918       255
+     respond_only     1.0000    1.0000    1.0000      1036
+
+         accuracy                         0.7594     14000
+        macro avg     0.7704    0.7619    0.7626     14000
+     weighted avg     0.7714    0.7594    0.7617     14000
+
+
+=== TOP CONFUSION PAIRS ===
+      true_action  bias_pred_action  count
+      grep_search         read_file    498
+        read_file    list_directory    358
+        read_file       grep_search    297
+      grep_search    list_directory    294
+   list_directory         read_file    177
+     glob_pattern    list_directory    164
+     glob_pattern         read_file    161
+         ask_user         plan_task    143
+         run_bash         run_tests    109
+        plan_task          ask_user    108
+     glob_pattern       grep_search     96
+      grep_search      glob_pattern     93
+   list_directory       grep_search     88
+lint_or_typecheck         run_tests     88
+        run_tests          run_bash     85
+        read_file      glob_pattern     80
+lint_or_typecheck          run_bash     65
+         run_bash lint_or_typecheck     64
+        run_tests lint_or_typecheck     54
+        edit_file       apply_patch     49
+   list_directory      glob_pattern     43
+      apply_patch         edit_file     41
+       web_search          ask_user     41
+       web_search         plan_task     40
+         ask_user        web_search     30
+        plan_task        web_search     27
+        read_file         edit_file      4
+         run_bash    list_directory      4
+        plan_task         edit_file      4
+      grep_search         run_tests      3
+
+Saved:
+ - top_confusion_pairs.csv
+ - top_confusion_examples.txt

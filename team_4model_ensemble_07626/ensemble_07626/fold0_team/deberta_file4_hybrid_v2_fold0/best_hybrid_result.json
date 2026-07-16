@@ -1,0 +1,27 @@
+{
+  "macro_f1": 0.7488798492078874,
+  "accuracy": 0.7506990750699075,
+  "gain": 0.003503154296528588,
+  "mode": "file4_logit_blend",
+  "gate": "base_pred_file4",
+  "base_conf_q": 0.5,
+  "spec_conf_thr": 0.4,
+  "spec_margin_thr": 0.1,
+  "alpha": 0.8,
+  "replace_n": 3978,
+  "replace_rate": 0.2852226285222629,
+  "base_macro_f1": 0.7453766949113588,
+  "base_accuracy": 0.7466121746612174,
+  "base_weights": {
+    "kluebert": 0.56,
+    "tabular": 0.43999999999999995
+  },
+  "specialist_true_file4_macro_f1": 0.5862090848115464,
+  "specialist_true_file4_accuracy": 0.5854796888504754,
+  "file4": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern"
+  ]
+}

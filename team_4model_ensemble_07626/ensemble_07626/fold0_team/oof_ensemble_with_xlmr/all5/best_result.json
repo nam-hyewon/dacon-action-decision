@@ -1,0 +1,14 @@
+{
+  "set": "all5",
+  "stage": "fine",
+  "bias_name": "prev_3model_bias",
+  "macro_f1": 0.7587635811620295,
+  "accuracy": 0.7572285714285715,
+  "weights": {
+    "deberta": 0.17,
+    "kluebert": 0.16,
+    "roberta": 0.17,
+    "tabular": 0.43,
+    "xlmr": 0.07
+  }
+}

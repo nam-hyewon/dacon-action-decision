@@ -1,0 +1,45 @@
+{
+  "base_weights": {
+    "deberta": 0.29,
+    "kluebert": 0.27,
+    "tabular": 0.44
+  },
+  "base_macro_f1": 0.7559438377809506,
+  "base_accuracy": 0.7560571428571429,
+  "final_macro_f1": 0.7580317462002473,
+  "final_accuracy": 0.7569285714285714,
+  "gain": 0.0020879084192966246,
+  "bias": {
+    "read_file": 0.029999999329447746,
+    "grep_search": 0.0,
+    "list_directory": 0.10999999940395355,
+    "glob_pattern": -0.019999999552965164,
+    "edit_file": 0.0,
+    "write_file": 0.019999999552965164,
+    "apply_patch": 0.019999999552965164,
+    "run_bash": 0.019999999552965164,
+    "run_tests": -0.029999999329447746,
+    "lint_or_typecheck": 0.09000000357627869,
+    "ask_user": 0.0,
+    "plan_task": 0.009999999776482582,
+    "web_search": 0.019999999552965164,
+    "respond_only": 0.0
+  },
+  "classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ],
+  "note": "final logits = weighted row-zscore ensemble logits + class bias"
+}

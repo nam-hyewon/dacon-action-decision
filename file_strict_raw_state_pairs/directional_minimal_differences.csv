@@ -1,0 +1,15 @@
+pair,feature,count,n,rate
+glob_pattern->grep_search,DIFF::result_norm,3,13,0.23076923076923078
+glob_pattern->grep_search,DIFF::path_norm,3,13,0.23076923076923078
+glob_pattern->grep_search,glob_pattern_ONLY::result_file,2,13,0.15384615384615385
+glob_pattern->grep_search,DIFF::path_ext,1,13,0.07692307692307693
+glob_pattern->list_directory,DIFF::result_norm,2,14,0.14285714285714285
+glob_pattern->list_directory,DIFF::path_norm,2,14,0.14285714285714285
+glob_pattern->list_directory,glob_pattern_ONLY::result_file,1,14,0.07142857142857142
+glob_pattern->read_file,read_file_ONLY::result_file,1,12,0.08333333333333333
+glob_pattern->read_file,DIFF::result_norm,1,12,0.08333333333333333
+glob_pattern->read_file,DIFF::path_norm,1,12,0.08333333333333333
+grep_search->read_file,DIFF::path_norm,3,23,0.13043478260869565
+grep_search->read_file,DIFF::result_norm,2,23,0.08695652173913043
+grep_search->read_file,read_file_ONLY::result_read,1,23,0.043478260869565216
+grep_search->read_file,grep_search_ONLY::result_definition,1,23,0.043478260869565216

@@ -1,0 +1,14 @@
+{
+  "original_head_file_acc": 0.5702679343128781,
+  "original_head_file_f1": 0.566392040116267,
+  "centroid_acc": 0.5426101987899741,
+  "centroid_f1": 0.5473077569245323,
+  "fresh_linear_acc": 0.5455488331892826,
+  "fresh_linear_f1": 0.5405365581235201,
+  "lda_acc": 0.5671564390665514,
+  "lda_f1": 0.558172748945299,
+  "centroid_offdiag_cos_mean": 0.8865846991539001,
+  "centroid_offdiag_cos_max": 0.9460355043411255,
+  "silhouette_cosine": 0.007110870908945799,
+  "silhouette_euclidean": 0.006176400929689407
+}

@@ -1,0 +1,70 @@
+{
+  "name": "large_tab_diet_lightgbm_gated40",
+  "local_eval": {
+    "split": "fold0",
+    "macro_f1_with_bias": 0.7649091765982957,
+    "macro_f1_before_bias": 0.7606642486911882,
+    "accuracy_with_bias": 0.7589445758944576,
+    "accuracy_before_bias": 0.7556463755646375
+  },
+  "submission": {
+    "large_gate_ratio": 0.4,
+    "script": "submit/script_large_tab_diet_lgb_gated40.py",
+    "zip": "submit/submit_large_tab_diet_lgb_gated40.zip"
+  },
+  "models": {
+    "large": {
+      "path": "submit/model/klue_roberta_large_eda_state_fold0",
+      "weight": 0.23494715963506377,
+      "temperature": 0.85
+    },
+    "tab": {
+      "path": "submit/model/tabular_histgb_fold0",
+      "weight": 0.275933718708222,
+      "temperature": 1.0
+    },
+    "diet": {
+      "path": "submit/model/kluebert_diet_fold0",
+      "weight": 0.23130059727646055,
+      "temperature": 1.0
+    },
+    "lightgbm": {
+      "path": "submit/model/tabular_lightgbm_fold0",
+      "weight": 0.2578185243802535,
+      "temperature": 1.75
+    }
+  },
+  "class_order": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ],
+  "class_bias": {
+    "read_file": 0.0,
+    "grep_search": -0.40000104904174805,
+    "list_directory": 0.1999983787536621,
+    "glob_pattern": 0.1999983787536621,
+    "edit_file": -0.5000009536743164,
+    "write_file": 0.34999823570251465,
+    "apply_patch": -0.20000123977661133,
+    "run_bash": 0.5999979972839355,
+    "run_tests": -0.10000133514404297,
+    "lint_or_typecheck": 0.0,
+    "ask_user": 0.0,
+    "plan_task": 0.0,
+    "web_search": 0.4999980926513672,
+    "respond_only": 0.0
+  },
+  "formula": "score = sum(weight_i * (logits_i / temperature_i)) + class_bias; pred = argmax(score)"
+}

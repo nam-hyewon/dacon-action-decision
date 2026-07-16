@@ -1,0 +1,30 @@
+{
+  "base_weights": {
+    "deberta": 0.25,
+    "kluebert": 0.2,
+    "roberta": 0.15,
+    "tabular": 0.4
+  },
+  "base_macro_f1": 0.7563953094400431,
+  "base_accuracy": 0.7568857142857143,
+  "best": {
+    "kind": "hgb",
+    "mode": "base_pred_file4",
+    "threshold": 0.32500000000000007,
+    "margin": 0.05,
+    "replace_n": 24781,
+    "replace_rate": 0.3540142857142857,
+    "macro_f1": 0.7569895479851105,
+    "accuracy": 0.7577857142857143,
+    "gain": 0.0005942385450674603,
+    "standalone_file4_macro_f1": 0.587946052331507,
+    "standalone_file4_acc": 0.5905079563616149
+  },
+  "file4": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern"
+  ],
+  "note": "OOF logit-feature meta-specialist. Trained on other folds' true file4 samples only."
+}

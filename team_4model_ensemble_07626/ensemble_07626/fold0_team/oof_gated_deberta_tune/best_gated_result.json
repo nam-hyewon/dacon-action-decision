@@ -1,0 +1,15 @@
+{
+  "mode": "always_blend_deberta",
+  "gate_score": "all",
+  "target_rate": 1.0,
+  "actual_rate": 1.0,
+  "use_deberta_n": 70000,
+  "alpha": 0.25,
+  "bias_name": "prev_full_bias",
+  "macro_f1": 0.7565898001189248,
+  "accuracy": 0.7562714285714286,
+  "kt_weights": {
+    "kluebert": 0.51,
+    "tabular": 0.49
+  }
+}

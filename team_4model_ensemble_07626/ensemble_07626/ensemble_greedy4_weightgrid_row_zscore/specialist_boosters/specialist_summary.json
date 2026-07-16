@@ -1,0 +1,40 @@
+{
+  "base": {
+    "macro_f1": 0.7604996619149869,
+    "accuracy": 0.7584285714285715
+  },
+  "best": {
+    "mode": "router",
+    "gamma": "greedy_per_target",
+    "macro_f1": 0.7613422293316174,
+    "delta_macro_f1": 0.0008425674166305797,
+    "accuracy": 0.7592142857142857,
+    "delta_accuracy": 0.0007857142857142785,
+    "changed_predictions": 221
+  },
+  "greedy": {
+    "macro_f1": 0.7613422293316174,
+    "delta_macro_f1": 0.0008425674166305797,
+    "accuracy": 0.7592142857142857,
+    "delta_accuracy": 0.0007857142857142785,
+    "changed_predictions": 221
+  },
+  "targets": [
+    "web_search",
+    "list_directory",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "read_file",
+    "grep_search",
+    "run_tests",
+    "run_bash",
+    "glob_pattern"
+  ],
+  "modes": [
+    "router",
+    "prompt_meta",
+    "prompt"
+  ],
+  "out_dir": "submit/model/ensemble_greedy4_weightgrid_row_zscore/specialist_boosters"
+}

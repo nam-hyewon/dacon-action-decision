@@ -1,0 +1,14 @@
+{
+  "name": "ens_large_tab_diet_lgb_oof",
+  "rows": 70000,
+  "macro_f1": 0.7622400568166927,
+  "per_fold_macro_f1": {
+    "0": 0.7649091765982957,
+    "1": 0.765021689235873,
+    "2": 0.7550955884195404,
+    "3": 0.7591790488739522,
+    "4": 0.766330331986759
+  },
+  "score_type": "raw_logit",
+  "row_order": "data/train.jsonl 순서 == index.csv 순서"
+}

@@ -1,0 +1,42 @@
+{
+  "models": [
+    "deberta",
+    "kluebert",
+    "roberta",
+    "tabular",
+    "xlmr"
+  ],
+  "weights": {
+    "deberta": 0.17,
+    "kluebert": 0.16,
+    "roberta": 0.17,
+    "tabular": 0.43,
+    "xlmr": 0.07
+  },
+  "normalization": "row_zscore",
+  "initial_bias": "prev_3model_bias_centered",
+  "no_bias_macro_f1": 0.7566153313347793,
+  "no_bias_accuracy": 0.7563142857142857,
+  "old_bias_macro_f1": 0.7587635811620295,
+  "old_bias_accuracy": 0.7572285714285715,
+  "best_macro_f1": 0.760029651336057,
+  "best_accuracy": 0.7572857142857143,
+  "gain_vs_no_bias": 0.0034143200012777264,
+  "gain_vs_old_bias": 0.0012660701740275782,
+  "best_bias": {
+    "read_file": 0.02071429044008255,
+    "grep_search": -0.009285712614655495,
+    "list_directory": 0.10571428388357162,
+    "glob_pattern": -0.029285715892910957,
+    "edit_file": -0.004285710863769054,
+    "write_file": 0.0957142785191536,
+    "apply_patch": -0.089285708963871,
+    "run_bash": -0.1192857101559639,
+    "run_tests": -0.16928571462631226,
+    "lint_or_typecheck": 0.08571428805589676,
+    "ask_user": -0.06428570300340652,
+    "plan_task": 0.005714288912713528,
+    "web_search": 0.11571427434682846,
+    "respond_only": 0.05571427941322327
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "type": "weighted_soup",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "input_dirs": [
+    "submit/model/deberta_base_eda_state4_fold0_seed42",
+    "submit/model/deberta_base_eda_state4_fold0_seed43",
+    "submit/model/deberta_base_eda_state4_fold0_seed44"
+  ],
+  "f1s": [
+    0.7167707377103076,
+    0.7237711876104134,
+    0.7199763459703095
+  ],
+  "weights": [
+    0.33175870217565767,
+    0.33499887375537896,
+    0.33324242406896354
+  ],
+  "weight_rule": "normalized best_val_macro_f1"
+}

@@ -1,0 +1,21 @@
+{
+  "note": "This measures validation logit loading, weight search, and ensemble postprocessing only. Transformer forward inference time for each base model is not included because this script consumes precomputed logits.",
+  "num_samples": 14000,
+  "num_models": 4,
+  "num_classes": 14,
+  "num_weight_combos": 1771,
+  "load_logits_sec": 0.14623282407410443,
+  "align_normalize_sec": 0.023819606052711606,
+  "weight_grid_build_sec": 0.006229301099665463,
+  "weight_search_sec": 13.661403088015504,
+  "write_outputs_sec": 0.11805756099056453,
+  "total_sec": 13.977364455000497,
+  "benchmark_best_weights": {
+    "repeats": 20,
+    "total_sec": 0.013121534953825176,
+    "sec_per_repeat": 0.0006560767476912587,
+    "ms_per_repeat": 0.6560767476912588,
+    "ms_per_sample": 4.686262483508991e-05,
+    "samples_per_repeat": 14000
+  }
+}

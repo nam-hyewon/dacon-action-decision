@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import joblib
 import math
 import re
 from pathlib import Path
@@ -248,6 +249,7 @@ def train_specialists_for_mode(train_rows, val_rows, targets, id2action, mode, m
 
     scores = np.zeros((n, cnum), dtype=np.float32)
     diag_rows = []
+    clfs = {}
 
     for target in targets:
         if target not in id2action:
@@ -268,6 +270,7 @@ def train_specialists_for_mode(train_rows, val_rows, targets, id2action, mode, m
             random_state=42,
         )
         clf.fit(Xtr, y_bin)
+        clfs[target] = clf
         p = clf.predict_proba(Xva)[:, 1]
         s = safe_logit(p).astype(np.float32)
         s = np.clip(s, -8, 8)
@@ -278,7 +281,12 @@ def train_specialists_for_mode(train_rows, val_rows, targets, id2action, mode, m
             "score_mean": float(s.mean()), "score_std": float(s.std()),
             "score_min": float(s.min()), "score_max": float(s.max()),
         })
-    return scores, pd.DataFrame(diag_rows)
+    artifact = {
+        "mode": mode,
+        "vectorizer": vec,
+        "clfs": clfs,
+    }
+    return scores, pd.DataFrame(diag_rows), artifact
 
 
 def per_class_metrics(y_true, pred, id2action):
@@ -332,14 +340,15 @@ def main():
     gammas = parse_list(args.gammas, float)
 
     all_results, all_diag = [], []
-    best, best_logits, best_pred, best_scores = None, None, None, None
+    best, best_logits, best_pred, best_scores, best_artifact = None, None, None, None, None
+    selected_for_artifact = None
 
     for mode in modes:
         print(f"\n[INFO] Training specialist mode={mode}")
         rows = load_rows(data_dir, text_mode=mode)
         train_rows, val_rows_split = split_like_train(rows, seed=args.seed)
         val_rows = align_val_rows(val_rows_split, val_df)
-        scores, diag = train_specialists_for_mode(
+        scores, diag, artifact = train_specialists_for_mode(
             train_rows, val_rows, targets, id2action, mode,
             max_features=args.max_features, min_df=args.min_df, C=args.C
         )
@@ -358,7 +367,7 @@ def main():
             }
             all_results.append(row)
             if best is None or (mf1, acc) > (best["macro_f1"], best["accuracy"]):
-                best, best_logits, best_pred, best_scores = row, adjusted, pred, scores
+                best, best_logits, best_pred, best_scores, best_artifact = row, adjusted, pred, scores, artifact
 
     res = pd.DataFrame(all_results).sort_values(["macro_f1", "accuracy"], ascending=False)
     res.to_csv(out_dir / "specialist_global_grid.csv", index=False)
@@ -400,6 +409,7 @@ def main():
         greedy_f1 = f1_score(y_true, greedy_pred, labels=list(range(len(id2action))), average="macro", zero_division=0)
         greedy_acc = accuracy_score(y_true, greedy_pred)
         pd.DataFrame(selected).to_csv(out_dir / "specialist_greedy_selected.csv", index=False)
+        selected_for_artifact = selected
         greedy_info = {
             "macro_f1": float(greedy_f1),
             "delta_macro_f1": float(greedy_f1 - base_f1),
@@ -415,6 +425,27 @@ def main():
 
     print("\nBest:")
     print(json.dumps(best, ensure_ascii=False, indent=2))
+
+    # Save deployable specialist artifact for test-time inference.
+    if best_artifact is not None:
+        deploy_artifact = dict(best_artifact)
+        deploy_artifact["all_classes"] = id2action
+        deploy_artifact["targets"] = targets
+        deploy_artifact["score_clip"] = [-8, 8]
+        deploy_artifact["safe_logit_eps"] = EPS
+        deploy_artifact["max_features"] = args.max_features
+        deploy_artifact["min_df"] = args.min_df
+        deploy_artifact["C"] = args.C
+
+        if best.get("gamma") == "greedy_per_target" and selected_for_artifact is not None:
+            gamma_map = {row["target"]: float(row["gamma"]) for row in selected_for_artifact}
+        else:
+            g = float(best.get("gamma", 0.0))
+            gamma_map = {target: g for target in deploy_artifact["clfs"].keys()}
+
+        deploy_artifact["gammas"] = gamma_map
+        joblib.dump(deploy_artifact, out_dir / "specialist_booster.joblib")
+        print(f"[INFO] Saved deployable specialist artifact to {out_dir / 'specialist_booster.joblib'}")
 
     probs = np.exp(best_logits - best_logits.max(axis=1, keepdims=True))
     probs = probs / probs.sum(axis=1, keepdims=True)

@@ -1,0 +1,40 @@
+{
+  "base": {
+    "macro_f1": 0.7311499451942164,
+    "accuracy": 0.7412857142857143
+  },
+  "best": {
+    "mode": "router",
+    "gamma": "greedy_per_target",
+    "macro_f1": 0.7459995455803188,
+    "delta_macro_f1": 0.01484960038610239,
+    "accuracy": 0.75,
+    "delta_accuracy": 0.008714285714285674,
+    "changed_predictions": 533
+  },
+  "greedy": {
+    "macro_f1": 0.7459995455803188,
+    "delta_macro_f1": 0.01484960038610239,
+    "accuracy": 0.75,
+    "delta_accuracy": 0.008714285714285674,
+    "changed_predictions": 533
+  },
+  "targets": [
+    "web_search",
+    "list_directory",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "read_file",
+    "grep_search",
+    "run_tests",
+    "run_bash",
+    "glob_pattern"
+  ],
+  "modes": [
+    "router",
+    "prompt_meta",
+    "prompt"
+  ],
+  "out_dir": "submit/model/deberta_base_eda_state4/specialist_boosters"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "tabular_histgb_history_view_oof",
+  "rows": 70000,
+  "macro_f1": 0.22794317374547654,
+  "per_fold_macro_f1": {
+    "0": 0.22444431992693417,
+    "1": 0.22904270822640724,
+    "2": 0.2308577627867548,
+    "3": 0.22561773860607245,
+    "4": 0.22908511120303698
+  },
+  "score_type": "log_prob(합=1)",
+  "row_order": "data/train.jsonl 순서 == index.csv 순서"
+}

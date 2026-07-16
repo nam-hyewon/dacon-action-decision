@@ -1,0 +1,61 @@
+{
+  "models": [
+    {
+      "name": "deberta",
+      "csv": "submit/model/deberta_base_eda_state4/val_predictions.csv",
+      "logits": "submit/model/deberta_base_eda_state4/val_logits.npy"
+    },
+    {
+      "name": "tabular",
+      "csv": "submit/model/tabular_histgb_row/val_predictions.csv",
+      "logits": "submit/model/tabular_histgb_row/val_logits.npy"
+    },
+    {
+      "name": "kluebert_focal",
+      "csv": "submit/model/kluebert_mid5_lr15_focal1/val_predictions.csv",
+      "logits": "submit/model/kluebert_mid5_lr15_focal1/val_logits.npy"
+    },
+    {
+      "name": "roberta_eda",
+      "csv": "submit/model/roberta_eda_state4/val_predictions.csv",
+      "logits": "submit/model/roberta_eda_state4/val_logits.npy"
+    }
+  ],
+  "normalize": "zscore",
+  "step": 0.05,
+  "num_weight_combos": 1771,
+  "best": {
+    "macro_f1": 0.7604996619149869,
+    "accuracy": 0.7584285714285715,
+    "changed_vs_first": 1022,
+    "weight_deberta": 0.30000001192092896,
+    "changed_vs_deberta": 1022,
+    "weight_tabular": 0.30000001192092896,
+    "changed_vs_tabular": 6178,
+    "weight_kluebert_focal": 0.15000000596046448,
+    "changed_vs_kluebert_focal": 1553,
+    "weight_roberta_eda": 0.25,
+    "changed_vs_roberta_eda": 1271
+  },
+  "timing": {
+    "note": "This measures validation logit loading, weight search, and ensemble postprocessing only. Transformer forward inference time for each base model is not included because this script consumes precomputed logits.",
+    "num_samples": 14000,
+    "num_models": 4,
+    "num_classes": 14,
+    "num_weight_combos": 1771,
+    "load_logits_sec": 0.14623282407410443,
+    "align_normalize_sec": 0.023819606052711606,
+    "weight_grid_build_sec": 0.006229301099665463,
+    "weight_search_sec": 13.661403088015504,
+    "write_outputs_sec": 0.11805756099056453,
+    "total_sec": 13.977364455000497,
+    "benchmark_best_weights": {
+      "repeats": 20,
+      "total_sec": 0.013121534953825176,
+      "sec_per_repeat": 0.0006560767476912587,
+      "ms_per_repeat": 0.6560767476912588,
+      "ms_per_sample": 4.686262483508991e-05,
+      "samples_per_repeat": 14000
+    }
+  }
+}

@@ -1,0 +1,5 @@
+cluster,members,support,total_errors_from_cluster,internal_confusion_errors,internal_error_share
+file4,read_file|grep_search|list_directory|glob_pattern,28782,11859,11734,0.9894594822497681
+exec3,run_bash|run_tests|lint_or_typecheck,11912,2582,2467,0.9554608830364059
+decision3,ask_user|plan_task|web_search,6653,2176,2025,0.9306066176470589
+edit3,edit_file|write_file|apply_patch,17475,437,397,0.9084668192219679

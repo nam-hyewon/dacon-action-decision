@@ -1,0 +1,48 @@
+{
+  "model_dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_base_eda_state4_fold0_weighted_soup_42_43_44",
+  "macro_f1": 0.6895116387865795,
+  "accuracy": 0.7125546712554671,
+  "num_val": 13947,
+  "max_len": 512,
+  "batch_size": 16,
+  "all_classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ],
+  "soup_info": {
+    "type": "weighted_soup",
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "input_dirs": [
+      "submit/model/deberta_base_eda_state4_fold0_seed42",
+      "submit/model/deberta_base_eda_state4_fold0_seed43",
+      "submit/model/deberta_base_eda_state4_fold0_seed44"
+    ],
+    "f1s": [
+      0.7167707377103076,
+      0.7237711876104134,
+      0.7199763459703095
+    ],
+    "weights": [
+      0.33175870217565767,
+      0.33499887375537896,
+      0.33324242406896354
+    ],
+    "weight_rule": "normalized best_val_macro_f1"
+  }
+}

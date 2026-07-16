@@ -1,0 +1,13 @@
+{
+  "set": "sota3_plus_xlmr",
+  "stage": "fine",
+  "bias_name": "prev_3model_bias",
+  "macro_f1": 0.758230278926581,
+  "accuracy": 0.7570142857142858,
+  "weights": {
+    "deberta": 0.29,
+    "kluebert": 0.26,
+    "tabular": 0.45,
+    "xlmr": 0.0
+  }
+}

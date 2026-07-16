@@ -1,0 +1,114 @@
+base f1: 0.7625727242596722 acc: 0.7594285714285715
+
+=== top pairs ===
+      true_action  bias_pred_action  count
+      grep_search         read_file    498
+        read_file    list_directory    358
+        read_file       grep_search    297
+      grep_search    list_directory    294
+   list_directory         read_file    177
+     glob_pattern    list_directory    164
+     glob_pattern         read_file    161
+         ask_user         plan_task    143
+         run_bash         run_tests    109
+        plan_task          ask_user    108
+     glob_pattern       grep_search     96
+      grep_search      glob_pattern     93
+   list_directory       grep_search     88
+lint_or_typecheck         run_tests     88
+        run_tests          run_bash     85
+        read_file      glob_pattern     80
+lint_or_typecheck          run_bash     65
+         run_bash lint_or_typecheck     64
+        run_tests lint_or_typecheck     54
+        edit_file       apply_patch     49
+   list_directory      glob_pattern     43
+      apply_patch         edit_file     41
+       web_search          ask_user     41
+       web_search         plan_task     40
+         ask_user        web_search     30
+        plan_task        web_search     27
+        read_file         edit_file      4
+         run_bash    list_directory      4
+        plan_task         edit_file      4
+      grep_search         run_tests      3
+
+num candidates: 22192
+
+=== top single rules ===
+f1=0.763600 acc=0.759786 changed=   6 target=ask_user           from_pred=web_search         kind=keyword    cond=kw_find_search+all                  boost=0.08 mask=86 pair_count=30
+f1=0.763600 acc=0.759786 changed=   6 target=ask_user           from_pred=web_search         kind=keyword    cond=kw_find_search+low30                boost=0.08 mask=51 pair_count=30
+f1=0.763600 acc=0.759786 changed=   6 target=ask_user           from_pred=web_search         kind=keyword    cond=kw_find_search+low50                boost=0.08 mask=86 pair_count=30
+f1=0.763600 acc=0.759786 changed=   6 target=ask_user           from_pred=web_search         kind=keyword    cond=kw_find_search+low70                boost=0.08 mask=86 pair_count=30
+f1=0.763513 acc=0.759929 changed=  22 target=lint_or_typecheck  from_pred=run_tests          kind=keyword    cond=kw_bash+all                         boost=0.30 mask=195 pair_count=88
+f1=0.763513 acc=0.759929 changed=  22 target=lint_or_typecheck  from_pred=run_tests          kind=keyword    cond=kw_bash+low50                       boost=0.30 mask=100 pair_count=88
+f1=0.763513 acc=0.759929 changed=  22 target=lint_or_typecheck  from_pred=run_tests          kind=keyword    cond=kw_bash+low70                       boost=0.30 mask=193 pair_count=88
+f1=0.763434 acc=0.759643 changed=  12 target=web_search         from_pred=plan_task          kind=pred_scope cond=all                                 boost=0.20 mask=573 pair_count=40
+f1=0.763434 acc=0.759643 changed=  12 target=web_search         from_pred=plan_task          kind=pred_scope cond=low30                               boost=0.20 mask=132 pair_count=40
+f1=0.763434 acc=0.759643 changed=  12 target=web_search         from_pred=plan_task          kind=pred_scope cond=low50                               boost=0.20 mask=397 pair_count=40
+f1=0.763434 acc=0.759643 changed=  12 target=web_search         from_pred=plan_task          kind=pred_scope cond=low70                               boost=0.20 mask=569 pair_count=40
+f1=0.763378 acc=0.759714 changed=  39 target=lint_or_typecheck  from_pred=run_tests          kind=ci         cond=ci=passed+all                       boost=0.30 mask=403 pair_count=88
+f1=0.763378 acc=0.759714 changed=  39 target=lint_or_typecheck  from_pred=run_tests          kind=ci         cond=ci=passed+low50                     boost=0.30 mask=195 pair_count=88
+f1=0.763378 acc=0.759714 changed=  39 target=lint_or_typecheck  from_pred=run_tests          kind=ci         cond=ci=passed+low70                     boost=0.30 mask=399 pair_count=88
+f1=0.763374 acc=0.759786 changed=  32 target=lint_or_typecheck  from_pred=run_tests          kind=keyword    cond=kw_bash+all                         boost=0.40 mask=195 pair_count=88
+f1=0.763374 acc=0.759786 changed=  32 target=lint_or_typecheck  from_pred=run_tests          kind=keyword    cond=kw_bash+low50                       boost=0.40 mask=100 pair_count=88
+f1=0.763374 acc=0.759786 changed=  32 target=lint_or_typecheck  from_pred=run_tests          kind=keyword    cond=kw_bash+low70                       boost=0.40 mask=193 pair_count=88
+f1=0.763348 acc=0.759857 changed=   8 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+all         boost=0.05 mask=46 pair_count=108
+f1=0.763348 acc=0.759857 changed=   8 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low30       boost=0.05 mask=35 pair_count=108
+f1=0.763348 acc=0.759857 changed=   8 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low50       boost=0.05 mask=46 pair_count=108
+f1=0.763348 acc=0.759857 changed=   8 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low70       boost=0.05 mask=46 pair_count=108
+f1=0.763342 acc=0.759857 changed=  10 target=plan_task          from_pred=ask_user           kind=last_action cond=last_action=grep_search+all         boost=0.05 mask=68 pair_count=108
+f1=0.763342 acc=0.759857 changed=  10 target=plan_task          from_pred=ask_user           kind=last_action cond=last_action=grep_search+low50       boost=0.05 mask=65 pair_count=108
+f1=0.763342 acc=0.759857 changed=  10 target=plan_task          from_pred=ask_user           kind=last_action cond=last_action=grep_search+low70       boost=0.05 mask=68 pair_count=108
+f1=0.763342 acc=0.759857 changed=  10 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+all         boost=0.08 mask=46 pair_count=108
+f1=0.763342 acc=0.759857 changed=  10 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low30       boost=0.08 mask=35 pair_count=108
+f1=0.763342 acc=0.759857 changed=  10 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low50       boost=0.08 mask=46 pair_count=108
+f1=0.763342 acc=0.759857 changed=  10 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low70       boost=0.08 mask=46 pair_count=108
+f1=0.763336 acc=0.759643 changed=   8 target=web_search         from_pred=plan_task          kind=git_dirty  cond=git_dirty=True+all                  boost=0.20 mask=337 pair_count=40
+f1=0.763336 acc=0.759643 changed=   8 target=web_search         from_pred=plan_task          kind=git_dirty  cond=git_dirty=True+low30                boost=0.20 mask=84 pair_count=40
+f1=0.763336 acc=0.759643 changed=   8 target=web_search         from_pred=plan_task          kind=git_dirty  cond=git_dirty=True+low50                boost=0.20 mask=237 pair_count=40
+f1=0.763336 acc=0.759643 changed=   8 target=web_search         from_pred=plan_task          kind=git_dirty  cond=git_dirty=True+low70                boost=0.20 mask=334 pair_count=40
+f1=0.763330 acc=0.759857 changed=  14 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+all         boost=0.10 mask=46 pair_count=108
+f1=0.763330 acc=0.759857 changed=  14 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low30       boost=0.10 mask=35 pair_count=108
+f1=0.763330 acc=0.759857 changed=  14 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low50       boost=0.10 mask=46 pair_count=108
+f1=0.763330 acc=0.759857 changed=  14 target=plan_task          from_pred=ask_user           kind=prev_action cond=prev_action=grep_search+low70       boost=0.10 mask=46 pair_count=108
+f1=0.763307 acc=0.760786 changed= 104 target=read_file          from_pred=grep_search        kind=keyword    cond=kw_open_read_show+low30             boost=0.40 mask=121 pair_count=297
+f1=0.763301 acc=0.760786 changed= 112 target=read_file          from_pred=grep_search        kind=keyword    cond=kw_open_read_show+all               boost=0.40 mask=517 pair_count=297
+f1=0.763301 acc=0.760786 changed= 112 target=read_file          from_pred=grep_search        kind=keyword    cond=kw_open_read_show+low50             boost=0.40 mask=440 pair_count=297
+f1=0.763301 acc=0.760786 changed= 112 target=read_file          from_pred=grep_search        kind=keyword    cond=kw_open_read_show+low70             boost=0.40 mask=517 pair_count=297
+f1=0.763286 acc=0.759643 changed=   6 target=web_search         from_pred=plan_task          kind=keyword    cond=kw_plan+all                         boost=0.40 mask=183 pair_count=40
+f1=0.763286 acc=0.759643 changed=   6 target=web_search         from_pred=plan_task          kind=keyword    cond=kw_plan+low50                       boost=0.40 mask=65 pair_count=40
+f1=0.763286 acc=0.759643 changed=   6 target=web_search         from_pred=plan_task          kind=keyword    cond=kw_plan+low70                       boost=0.40 mask=179 pair_count=40
+f1=0.763268 acc=0.760714 changed= 100 target=read_file          from_pred=grep_search        kind=keyword    cond=kw_open_read_show+low30             boost=0.30 mask=121 pair_count=297
+f1=0.763235 acc=0.759643 changed=   4 target=web_search         from_pred=plan_task          kind=last_action cond=last_action=plan_task+all           boost=0.40 mask=33 pair_count=40
+f1=0.763235 acc=0.759643 changed=   4 target=web_search         from_pred=plan_task          kind=last_action cond=last_action=plan_task+low50         boost=0.40 mask=15 pair_count=40
+f1=0.763235 acc=0.759643 changed=   4 target=web_search         from_pred=plan_task          kind=last_action cond=last_action=plan_task+low70         boost=0.40 mask=30 pair_count=40
+f1=0.763233 acc=0.760643 changed=  77 target=read_file          from_pred=grep_search        kind=keyword    cond=kw_open_read_show+all               boost=0.10 mask=517 pair_count=297
+f1=0.763233 acc=0.760643 changed=  77 target=read_file          from_pred=grep_search        kind=keyword    cond=kw_open_read_show+low30             boost=0.10 mask=121 pair_count=297
+f1=0.763233 acc=0.760643 changed=  77 target=read_file          from_pred=grep_search        kind=keyword    cond=kw_open_read_show+low50             boost=0.10 mask=440 pair_count=297
+
+=== greedy combine ===
+greedy candidates: 200
+step=00 f1=0.763600 acc=0.759786 changed=   6 target=ask_user           from=web_search         keyword kw_find_search+all boost=0.08 mask=86
+step=01 f1=0.764541 acc=0.760286 changed=  28 target=lint_or_typecheck  from=run_tests          keyword kw_bash+all boost=0.30 mask=195
+step=02 f1=0.765396 acc=0.760500 changed=  40 target=web_search         from=plan_task          pred_scope all boost=0.20 mask=573
+step=03 f1=0.766178 acc=0.760929 changed=  48 target=plan_task          from=ask_user           prev_action prev_action=grep_search+all boost=0.05 mask=46
+step=04 f1=0.766912 acc=0.762286 changed= 152 target=read_file          from=grep_search        keyword kw_open_read_show+low30 boost=0.40 mask=121
+step=05 f1=0.767565 acc=0.763000 changed= 181 target=list_directory     from=read_file          last_action last_action=none+all boost=0.30 mask=122
+step=06 f1=0.768180 acc=0.763429 changed= 191 target=run_tests          from=lint_or_typecheck  prev_action prev_action=edit_file+all boost=0.08 mask=166
+step=07 f1=0.768736 acc=0.763571 changed= 197 target=web_search         from=ask_user           keyword kw_plan+all boost=0.30 mask=127
+step=08 f1=0.769205 acc=0.763929 changed= 204 target=run_tests          from=lint_or_typecheck  last_action last_action=apply_patch+low30 boost=0.20 mask=22
+step=09 f1=0.769653 acc=0.764071 changed= 209 target=web_search         from=plan_task          last_action last_action=plan_task+all boost=0.40 mask=33
+step=10 f1=0.770099 acc=0.764286 changed= 214 target=lint_or_typecheck  from=run_tests          keyword kw_plan+all boost=0.40 mask=33
+step=11 f1=0.770419 acc=0.764929 changed= 312 target=read_file          from=grep_search        ci ci=none+all boost=0.15 mask=450
+step=12 f1=0.770712 acc=0.765286 changed= 327 target=list_directory     from=read_file          keyword kw_open_read_show+all boost=0.10 mask=798
+step=13 f1=0.770944 acc=0.765357 changed= 328 target=web_search         from=ask_user           keyword kw_lint+all boost=0.30 mask=8
+step=14 f1=0.771091 acc=0.765643 changed= 336 target=read_file          from=grep_search        keyword kw_open_read_show+all boost=0.15 mask=517
+step=15 f1=0.771218 acc=0.765714 changed= 339 target=plan_task          from=ask_user           last_action last_action=grep_search+all boost=0.03 mask=68
+step=16 f1=0.771241 acc=0.765786 changed= 356 target=read_file          from=grep_search        keyword kw_list_dir+all boost=0.08 mask=155
+no more improvement
+
+final f1: 0.7712409522772201 acc: 0.7657857142857143
+saved:
+ - chosen_confusion_pair_rules.csv
+ - val_logits_with_confusion_pair_rules.npy

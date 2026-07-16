@@ -1,0 +1,15 @@
+{
+  "mode": "low_base_conf",
+  "gate": "low_base_conf",
+  "target_rate": 0.3,
+  "actual_rate": 0.3,
+  "use_deberta_n": 21000,
+  "alpha": 0.25,
+  "bias_name": "prev_full_bias",
+  "macro_f1": 0.75661585540748,
+  "accuracy": 0.7558857142857143,
+  "base_weights": {
+    "kluebert": 0.51,
+    "tabular": 0.49
+  }
+}

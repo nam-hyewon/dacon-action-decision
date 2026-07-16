@@ -1,0 +1,18 @@
+{
+  "models": {
+    "deberta": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_base_eda_state4_seed43_oof",
+    "kluebert": "team_4model_ensemble_07626/ensemble_07626/fold0_team/kluebert_mid5_lr15_oof",
+    "roberta": "team_4model_ensemble_07626/ensemble_07626/fold0_team/roberta_eda_state4_oof",
+    "tabular": "team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_histgb_oof"
+  },
+  "normalization": "row_zscore_logits",
+  "search_step": 0.05,
+  "macro_f1": 0.7563953094400431,
+  "accuracy": 0.7568857142857143,
+  "weights": {
+    "deberta": 0.25,
+    "kluebert": 0.2,
+    "roberta": 0.15,
+    "tabular": 0.4
+  }
+}

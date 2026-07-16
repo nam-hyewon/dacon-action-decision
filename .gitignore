@@ -25,3 +25,74 @@ slurm-*.out
 *.npy
 __pycache__/
 *.pyc
+
+# Large trained model artifacts
+**/model.safetensors
+**/pytorch_model.bin
+**/*.bin
+**/*.pt
+**/*.pth
+**/*.ckpt
+
+# Large serialized tabular models
+**/*.joblib
+**/*.pkl
+
+# Submission archives
+*.zip
+
+# Generated logits / embeddings
+**/*.npy
+**/*.npz
+
+# Runtime outputs and logs
+*.out
+*.log
+slurm-*.out
+
+# Generated directories
+**/output/
+**/__pycache__/
+*.pyc
+
+# Local test links/data
+submit-*/data
+
+# Raw datasets
+data/
+**/train.jsonl
+**/test.jsonl
+**/train_labels.csv
+
+# Large row-level prediction outputs
+**/val_predictions*.csv
+**/test_predictions*.csv
+**/submission.csv
+
+# Generated caches and temporary artifacts
+.cache/
+.ipynb_checkpoints/
+
+# Recursive/local model symlinks
+team_4model_ensemble_07626/ensemble_07626/fold0_team/roberta_eda_state4_fold0/roberta_eda_state4
+team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_fold0_seed_ensemble/tabular_fold0_seed_ensemble
+team_4model_ensemble_07626/ensemble_07626/model
+
+# Slurm stderr
+*.err
+slurm-*.err
+
+# Archives and bundles
+*.tar
+*.tar.gz
+*.tgz
+
+# Row-level/generated analysis artifacts
+decoder_probe_qwen25_15b/
+analysis_outputs/
+ensemble_tune_outputs/
+stacking_data/
+
+# Local submission directories
+submit-*/
+data/data

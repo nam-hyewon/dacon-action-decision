@@ -1,0 +1,7 @@
+family              raw
+temperature         0.5
+alpha               0.0
+macro_f1       0.764678
+gain                0.0
+accuracy       0.758801
+changed_n             0

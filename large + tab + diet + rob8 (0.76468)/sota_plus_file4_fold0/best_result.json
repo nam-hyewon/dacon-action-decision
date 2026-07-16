@@ -1,0 +1,26 @@
+{
+  "reconstructed_base_macro_f1": 0.7607680732933236,
+  "reconstructed_base_accuracy": 0.7550727755072776,
+  "reported_local_score": 0.76468,
+  "base_weights": {
+    "large": 0.44999998807907104,
+    "tab": 0.4000000059604645,
+    "diet": 0.15000000596046448,
+    "rob8": 0.0
+  },
+  "specialist_true_file4_macro_f1": 0.5862090848115464,
+  "specialist_true_file4_accuracy": 0.5854796888504754,
+  "best_hybrid": {
+    "macro_f1": 0.7625732853862124,
+    "accuracy": 0.7572237757223775,
+    "gain": 0.0018052120928887527,
+    "mode": "file4_logit_blend",
+    "gate": "base_pred_file4",
+    "base_conf_q": 0.4,
+    "spec_conf_thr": 0.6,
+    "spec_margin_thr": -1.0,
+    "alpha": 0.4,
+    "replace_n": 2233,
+    "replace_rate": 0.1601061160106116
+  }
+}

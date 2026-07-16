@@ -1,0 +1,52 @@
+{
+  "base": {
+    "macro_f1": 0.7604996619149869,
+    "accuracy": 0.7584285714285715
+  },
+  "best": {
+    "macro_f1": 0.7625727242596722,
+    "delta_macro_f1": 0.0020730623446852947,
+    "accuracy": 0.7594285714285715,
+    "delta_accuracy": 0.0010000000000000009,
+    "changed_predictions": 199,
+    "biases": {
+      "list_directory": 0.15000000596046448,
+      "glob_pattern": 0.15000000596046448,
+      "run_bash": -0.05000000074505806,
+      "lint_or_typecheck": 0.05000000074505806,
+      "web_search": -0.10000000149011612
+    }
+  },
+  "targets": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "lint_or_typecheck",
+    "run_tests",
+    "run_bash"
+  ],
+  "bias_grid": [
+    -1.0,
+    -0.75,
+    -0.5,
+    -0.35,
+    -0.25,
+    -0.15,
+    -0.1,
+    -0.05,
+    0.0,
+    0.05,
+    0.1,
+    0.15,
+    0.25,
+    0.35,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "passes": 4
+}

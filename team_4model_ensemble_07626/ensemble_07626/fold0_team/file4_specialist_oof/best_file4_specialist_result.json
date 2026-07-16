@@ -1,0 +1,47 @@
+{
+  "base_weights": {
+    "deberta": 0.25,
+    "kluebert": 0.2,
+    "roberta": 0.15,
+    "tabular": 0.4
+  },
+  "base_macro_f1": 0.7563953094400431,
+  "base_accuracy": 0.7568857142857143,
+  "specialist_true_file4_macro_f1": 0.4423366649414162,
+  "specialist_true_file4_accuracy": 0.44406226113543185,
+  "best": {
+    "mode": "base_pred_file4",
+    "threshold": 0.9500000000000006,
+    "margin": null,
+    "replace_n": 108,
+    "replace_rate": 0.001542857142857143,
+    "macro_f1": 0.7563790027443063,
+    "accuracy": 0.7568714285714285,
+    "gain": -1.6306695736822974e-05,
+    "spec_file4_macro_f1": 0.4423366649414162,
+    "spec_file4_acc": 0.44406226113543185
+  },
+  "classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ],
+  "file4_classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern"
+  ],
+  "note": "OOF specialist. For each fold, train TF-IDF LogisticRegression on other folds' true file4 samples only."
+}

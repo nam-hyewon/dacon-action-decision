@@ -1,0 +1,65 @@
+{
+  "model_name": "deberta_base_eda_state4_seed43",
+  "folds_dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_folds",
+  "num_folds": 5,
+  "n": 70000,
+  "logits_shape": [
+    70000,
+    14
+  ],
+  "macro_f1": 0.7259041053618888,
+  "accuracy": 0.7377,
+  "folds": [
+    {
+      "fold": 0,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_folds/deberta_base_eda_state4_fold0_seed43",
+      "n": 13947,
+      "macro_f1": 0.7237711876104134,
+      "accuracy": 0.7333476733347674
+    },
+    {
+      "fold": 1,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_folds/deberta_base_eda_state4_fold1_seed43",
+      "n": 14130,
+      "macro_f1": 0.7256113645648166,
+      "accuracy": 0.7440198159943383
+    },
+    {
+      "fold": 2,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_folds/deberta_base_eda_state4_fold2_seed43",
+      "n": 14187,
+      "macro_f1": 0.718923440803786,
+      "accuracy": 0.7339113272714457
+    },
+    {
+      "fold": 3,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_folds/deberta_base_eda_state4_fold3_seed43",
+      "n": 13810,
+      "macro_f1": 0.7279110062053438,
+      "accuracy": 0.7403330919623461
+    },
+    {
+      "fold": 4,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/deberta_folds/deberta_base_eda_state4_fold4_seed43",
+      "n": 13926,
+      "macro_f1": 0.7329478052966004,
+      "accuracy": 0.7368950165158696
+    }
+  ],
+  "classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ]
+}

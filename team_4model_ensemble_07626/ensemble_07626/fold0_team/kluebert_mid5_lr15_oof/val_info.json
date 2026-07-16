@@ -1,0 +1,58 @@
+{
+  "name": "kluebert_mid5_lr15_oof",
+  "model_type": "oof_concat",
+  "pattern": "submit/model/kluebert_mid5_lr15_fold{fold}",
+  "folds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "num_val": 70000,
+  "best_val_macro_f1": 0.7284058888588263,
+  "accuracy": 0.7364428571428572,
+  "fold_scores": {
+    "0": {
+      "rows": 13947,
+      "macro_f1": 0.7278613102243827,
+      "accuracy": 0.7334910733491073
+    },
+    "1": {
+      "rows": 14130,
+      "macro_f1": 0.7320700416337379,
+      "accuracy": 0.7395612172682237
+    },
+    "2": {
+      "rows": 14187,
+      "macro_f1": 0.7211610279455566,
+      "accuracy": 0.7339113272714457
+    },
+    "3": {
+      "rows": 13810,
+      "macro_f1": 0.7323728933875423,
+      "accuracy": 0.7436640115858074
+    },
+    "4": {
+      "rows": 13926,
+      "macro_f1": 0.7262677437588563,
+      "accuracy": 0.7316530231222175
+    }
+  },
+  "all_classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ]
+}

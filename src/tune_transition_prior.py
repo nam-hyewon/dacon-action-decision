@@ -1,495 +1,180 @@
-#!/usr/bin/env python3
-"""
-Tune a weak transition prior on top of saved validation logits.
-
-Inputs expected from src/train_deberta.py:
-  - val_predictions.csv with columns including:
-      true_id, true_action, last_action, pred_action, confidence, correct ...
-  - val_logits.npy with shape [N, num_classes]
-
-Recommended usage inside project root:
-  python src/tune_transition_prior.py \
-    --val_csv submit/model/deberta/val_predictions.csv \
-    --val_logits submit/model/deberta/val_logits.npy \
-    --out_dir submit/model/deberta/prior_tuning
-
-If you have data/train.csv and it contains action labels + last_action, use it to build the prior
-without validation-label leakage:
-  python src/tune_transition_prior.py \
-    --val_csv submit/model/deberta/val_predictions.csv \
-    --val_logits submit/model/deberta/val_logits.npy \
-    --prior_source data/train.csv \
-    --out_dir submit/model/deberta/prior_tuning
-"""
-
-from __future__ import annotations
-
-import argparse
+import csv
 import json
-import math
-import os
+import argparse
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from collections import defaultdict, Counter
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, classification_report, f1_score
+from sklearn.metrics import f1_score, accuracy_score
 
 
-DEFAULT_ALPHAS = [0.0, 0.02, 0.03, 0.05, 0.08, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30]
-DEFAULT_SMOOTHINGS = [0.5, 1.0, 2.0, 5.0, 10.0]
-NONE_TOKEN = "__NONE__"
+ALL_CLASSES = [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only",
+]
+LABEL2ID = {c: i for i, c in enumerate(ALL_CLASSES)}
 
 
-def parse_float_list(s: str) -> List[float]:
-    return [float(x.strip()) for x in s.split(",") if x.strip()]
-
-
-def infer_id2action(val_df: pd.DataFrame, num_classes: int) -> List[str]:
-    """Infer class order used by logits from val_predictions true_id/pred_id columns."""
-    pairs = []
-    for id_col, action_col in [("true_id", "true_action"), ("pred_id", "pred_action")]:
-        if id_col in val_df.columns and action_col in val_df.columns:
-            pairs.append(val_df[[id_col, action_col]].rename(columns={id_col: "id", action_col: "action"}))
-    if not pairs:
-        raise ValueError("val_csv must contain true_id/true_action or pred_id/pred_action to infer class order.")
-
-    all_pairs = pd.concat(pairs, ignore_index=True).dropna().drop_duplicates()
-    id2actions: Dict[int, set] = {}
-    for _, r in all_pairs.iterrows():
-        idx = int(r["id"])
-        id2actions.setdefault(idx, set()).add(str(r["action"]))
-
-    id2action: List[str] = []
-    for i in range(num_classes):
-        acts = sorted(id2actions.get(i, []))
-        if len(acts) != 1:
-            raise ValueError(f"Could not infer a unique action for class id {i}: {acts}")
-        id2action.append(acts[0])
-    return id2action
-
-
-def find_col(df: pd.DataFrame, candidates: Iterable[str]) -> str | None:
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
-
-
-def load_prior_source(prior_source, val_df):
-    """
-    Load transition-prior source.
-
-    Supported:
-    - .csv
-    - .jsonl / .json
-    - None: fallback to validation labels, leaky probe only
-    """
-    if prior_source is None or str(prior_source).strip() == "":
-        print("[WARNING] prior_source was not provided, so the prior was estimated from validation labels.")
-        print("          This is useful only as a quick probe. For clean tuning, pass --prior_source data/train.csv or data/train.jsonl")
-        return val_df.copy(), True
-
-    p = Path(prior_source)
-    if not p.exists():
-        raise FileNotFoundError(f"prior_source not found: {prior_source}")
-
-    suffix = p.suffix.lower()
-
-    if suffix == ".csv":
-        src = pd.read_csv(p)
-    elif suffix in [".jsonl", ".json"]:
-        # DACON train is often jsonl: one JSON object per line.
-        src = pd.read_json(p, lines=True)
-    else:
-        raise ValueError(f"Unsupported prior_source format: {p.suffix}. Use .csv, .jsonl, or .json")
-
-    return src, False
-
-
-def standardize_prior_df(df, id2action):
-    """
-    Return dataframe with columns:
-    - last_action
-    - true_action
-
-    Supports:
-    1. val_predictions.csv-like files:
-       last_action + true_action/action/label
-
-    2. raw DACON train.jsonl-like files:
-       history = list of turns, where assistant actions appear as:
-       {"role": "assistant_action", "name": "..."}
-       In this case, we estimate transition prior from adjacent assistant_action names
-       inside each history:
-       action_t -> action_{t+1}
-    """
-    df = df.copy()
-    valid_actions = set(id2action)
-
-    # ============================================================
-    # Case 1: raw DACON jsonl with history
-    # ============================================================
-    if "history" in df.columns:
-        rows = []
-
-        import ast
-        import json
-
-        def parse_history(x):
-            if isinstance(x, list):
-                return x
-
-            if x is None:
-                return []
-
-            s = str(x).strip()
-            if not s or s.lower() in ["nan", "none", "null"]:
-                return []
-
-            try:
-                parsed = json.loads(s)
-                if isinstance(parsed, list):
-                    return parsed
-            except Exception:
-                pass
-
-            try:
-                parsed = ast.literal_eval(s)
-                if isinstance(parsed, list):
-                    return parsed
-            except Exception:
-                pass
-
-            return []
-
-        for hist in df["history"]:
-            hist = parse_history(hist)
-
-            actions = []
-            for turn in hist:
-                if not isinstance(turn, dict):
-                    continue
-
-                if turn.get("role") == "assistant_action":
-                    name = turn.get("name")
-                    if name in valid_actions:
-                        actions.append(name)
-
-            # adjacent transitions inside history
-            for prev_a, next_a in zip(actions[:-1], actions[1:]):
-                rows.append({
-                    "last_action": prev_a,
-                    "true_action": next_a,
-                })
-
-        if len(rows) > 0:
-            out = pd.DataFrame(rows)
-
-            action2id = {a: i for i, a in enumerate(id2action)}
-            out["last_action_id"] = out["last_action"].map(action2id)
-            out["action_id"] = out["true_action"].map(action2id)
-
-            out = out.dropna(subset=["last_action_id", "action_id"]).copy()
-            out["last_action_id"] = out["last_action_id"].astype(int)
-            out["action_id"] = out["action_id"].astype(int)
-
-            print(f"[INFO] Built transition prior source from history transitions: {len(out)} pairs")
-            return out[["last_action", "true_action", "last_action_id", "action_id"]]
-
-        # If history exists but no transitions found, continue to column-based fallback.
-
-    # ============================================================
-    # Case 2: val_predictions.csv-like / tabular labeled source
-    # ============================================================
-
-    # ---------- find true action ----------
-    true_candidates = [
-        "true_action",
-        "action",
-        "label",
-        "target",
-        "next_action",
-        "answer",
-        "output",
+def get_actions(sample):
+    history = sample.get("history", [])
+    return [
+        str(h.get("name", ""))
+        for h in history
+        if h.get("role") == "assistant_action"
     ]
 
-    true_col = None
-    for c in true_candidates:
-        if c in df.columns:
-            true_col = c
-            break
 
-    if true_col is None:
-        raise ValueError(
-            "Prior source needs either a DACON-style history column "
-            "or a true action column. "
-            f"Available columns: {list(df.columns)}"
-        )
-
-    df["true_action"] = df[true_col].astype(str)
-
-    def normalize_action(x):
-        if x in valid_actions:
-            return x
-        try:
-            ix = int(x)
-            if 0 <= ix < len(id2action):
-                return id2action[ix]
-        except Exception:
-            pass
-        return x
-
-    df["true_action"] = df["true_action"].map(normalize_action)
-
-    # ---------- find last action ----------
-    last_candidates = [
-        "last_action",
-        "previous_action",
-        "prev_action",
-        "last_tool",
-        "previous_tool",
-        "prev_tool",
-    ]
-
-    last_col = None
-    for c in last_candidates:
-        if c in df.columns:
-            last_col = c
-            break
-
-    if last_col is not None:
-        df["last_action"] = df[last_col].astype(str)
-
-    elif "recent_actions" in df.columns:
-        def get_last_from_recent_actions(x):
-            if x is None:
-                return "NONE"
-
-            if isinstance(x, list):
-                return str(x[-1]) if len(x) else "NONE"
-
-            s = str(x).strip()
-            if not s or s.lower() in ["nan", "none", "null"]:
-                return "NONE"
-
-            try:
-                parsed = ast.literal_eval(s)
-                if isinstance(parsed, list) and len(parsed):
-                    return str(parsed[-1])
-            except Exception:
-                pass
-
-            for sep in ["|", ",", " "]:
-                parts = [p.strip().strip("'\"") for p in s.split(sep) if p.strip()]
-                valid = [p for p in parts if p in valid_actions]
-                if valid:
-                    return valid[-1]
-
-            return "NONE"
-
-        df["last_action"] = df["recent_actions"].map(get_last_from_recent_actions)
-
-    else:
-        raise ValueError(
-            "Prior source needs a last_action-like column, recent_actions, "
-            "or DACON-style history. "
-            f"Available columns: {list(df.columns)}"
-        )
-
-    df["last_action"] = df["last_action"].fillna("NONE").astype(str)
-    df["true_action"] = df["true_action"].fillna("").astype(str)
-
-    df = df[df["true_action"].isin(valid_actions)].copy()
-
-    if len(df) == 0:
-        raise ValueError(
-            "After standardizing prior source, no valid true_action rows remained."
-        )
-
-    action2id = {a: i for i, a in enumerate(id2action)}
-    df["last_action_id"] = df["last_action"].map(action2id)
-    df["action_id"] = df["true_action"].map(action2id)
-
-    df = df.dropna(subset=["action_id"]).copy()
-    df["action_id"] = df["action_id"].astype(int)
-    df["last_action_id"] = df["last_action_id"].fillna(-1).astype(int)
-
-    return df[["last_action", "true_action", "last_action_id", "action_id"]]
+def get_key(sample, order):
+    actions = get_actions(sample)
+    if order == 1:
+        return (actions[-1],) if len(actions) >= 1 else ("none",)
+    if order == 2:
+        return tuple(actions[-2:]) if len(actions) >= 2 else tuple(["none"] * (2 - len(actions)) + actions)
+    if order == 3:
+        return tuple(actions[-3:]) if len(actions) >= 3 else tuple(["none"] * (3 - len(actions)) + actions)
+    raise ValueError(order)
 
 
-def build_log_prior(prior_df: pd.DataFrame, num_classes: int, smoothing: float) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
-    """Return dict last_action -> log probability vector, and global log prior."""
-    global_counts = np.bincount(prior_df["action_id"].values, minlength=num_classes).astype(float) + smoothing
-    global_probs = global_counts / global_counts.sum()
-    global_log_prior = np.log(global_probs)
+def load_train(data_dir):
+    data_dir = Path(data_dir)
+    samples = []
+    with open(data_dir / "train.jsonl", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                samples.append(json.loads(line))
 
-    prior: Dict[str, np.ndarray] = {}
-    for last_action, g in prior_df.groupby("last_action"):
-        counts = np.bincount(g["action_id"].values, minlength=num_classes).astype(float) + smoothing
-        probs = counts / counts.sum()
-        prior[str(last_action)] = np.log(probs)
-    return prior, global_log_prior
+    labels = {}
+    with open(data_dir / "train_labels.csv", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            labels[row["id"]] = row["action"]
 
-
-def apply_prior(
-    logits: np.ndarray,
-    last_actions: np.ndarray,
-    log_prior: Dict[str, np.ndarray],
-    global_log_prior: np.ndarray,
-    alpha: float,
-) -> np.ndarray:
-    adjusted = logits.copy()
-    for i, last_action in enumerate(last_actions):
-        adjusted[i] += alpha * log_prior.get(str(last_action), global_log_prior)
-    return adjusted
-
-
-def per_class_f1_df(y_true: np.ndarray, y_pred: np.ndarray, id2action: List[str]) -> pd.DataFrame:
     rows = []
-    for i, action in enumerate(id2action):
-        mask_true = y_true == i
-        mask_pred = y_pred == i
-        tp = int((mask_true & mask_pred).sum())
-        fp = int((~mask_true & mask_pred).sum())
-        fn = int((mask_true & ~mask_pred).sum())
-        precision = tp / (tp + fp) if tp + fp > 0 else 0.0
-        recall = tp / (tp + fn) if tp + fn > 0 else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
-        rows.append({
-            "action": action,
-            "support": int(mask_true.sum()),
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
-        })
-    return pd.DataFrame(rows).sort_values("f1")
+    for s in samples:
+        sid = s["id"]
+        if sid not in labels:
+            continue
+        rows.append((s, labels[sid]))
+    return rows
 
 
-def main() -> None:
+def make_prior(rows, order=1, smoothing=1.0):
+    counts = defaultdict(Counter)
+    global_counts = Counter()
+
+    for s, label in rows:
+        key = get_key(s, order)
+        counts[key][label] += 1
+        global_counts[label] += 1
+
+    # global fallback
+    total_global = sum(global_counts.values()) + smoothing * len(ALL_CLASSES)
+    global_prob = np.array([
+        (global_counts[c] + smoothing) / total_global
+        for c in ALL_CLASSES
+    ], dtype=np.float64)
+
+    table = {}
+    for key, cnt in counts.items():
+        total = sum(cnt.values()) + smoothing * len(ALL_CLASSES)
+        prob = np.array([
+            (cnt[c] + smoothing) / total
+            for c in ALL_CLASSES
+        ], dtype=np.float64)
+        table[key] = np.log(prob)
+
+    return table, np.log(global_prob)
+
+
+def get_prior_matrix(samples, table, global_logp, order):
+    arr = []
+    for s in samples:
+        key = get_key(s, order)
+        arr.append(table.get(key, global_logp))
+    return np.vstack(arr)
+
+
+def load_samples_aligned(data_dir, val_df):
+    # val_predictions.csv id order에 맞춰 train sample을 align
+    samples_by_id = {}
+    with open(Path(data_dir) / "train.jsonl", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                s = json.loads(line)
+                samples_by_id[s["id"]] = s
+
+    ids = val_df["id"].tolist()
+    return [samples_by_id[i] for i in ids]
+
+
+def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--val_csv", default="submit/model/deberta/val_predictions.csv")
-    ap.add_argument("--val_logits", default="submit/model/deberta/val_logits.npy")
-    ap.add_argument("--prior_source", default=None, help="Prefer data/train.csv here to avoid val-label leakage.")
-    ap.add_argument("--out_dir", default="submit/model/deberta/prior_tuning")
-    ap.add_argument("--alphas", default=",".join(map(str, DEFAULT_ALPHAS)))
-    ap.add_argument("--smoothings", default=",".join(map(str, DEFAULT_SMOOTHINGS)))
+    ap.add_argument("--data_dir", default="data")
+    ap.add_argument("--val_csv", required=True)
+    ap.add_argument("--val_logits", required=True)
+    ap.add_argument("--smoothing", type=float, default=1.0)
     args = ap.parse_args()
 
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
     val_df = pd.read_csv(args.val_csv)
-    logits = np.load(args.val_logits)
-    if len(val_df) != len(logits):
-        raise ValueError(f"val_csv rows ({len(val_df)}) != val_logits rows ({len(logits)})")
+    logits = np.load(args.val_logits).astype(np.float64)
 
-    num_classes = logits.shape[1]
-    id2action = infer_id2action(val_df, num_classes)
-    y_true = val_df["true_id"].astype(int).values
-    last_actions = val_df["last_action"].fillna(NONE_TOKEN).astype(str).values
+    if "true_id" in val_df.columns:
+        y = val_df["true_id"].astype(int).values
+    else:
+        y = val_df["true_action"].map(LABEL2ID).astype(int).values
 
-    prior_src_raw, used_val_as_prior = load_prior_source(args.prior_source, val_df)
-    prior_df = standardize_prior_df(prior_src_raw, id2action)
+    val_samples = load_samples_aligned(args.data_dir, val_df)
+    train_rows = load_train(args.data_dir)
 
-    alphas = parse_float_list(args.alphas)
-    smoothings = parse_float_list(args.smoothings)
+    labels = list(range(len(ALL_CLASSES)))
 
     base_pred = logits.argmax(axis=1)
-    base_macro_f1 = f1_score(y_true, base_pred, average="macro")
-    base_acc = accuracy_score(y_true, base_pred)
+    base_f1 = f1_score(y, base_pred, labels=labels, average="macro", zero_division=0)
+    base_acc = accuracy_score(y, base_pred)
 
-    rows = []
-    best = None
-    for smoothing in smoothings:
-        log_prior, global_log_prior = build_log_prior(prior_df, num_classes, smoothing)
-        for alpha in alphas:
-            adjusted = apply_prior(logits, last_actions, log_prior, global_log_prior, alpha)
-            pred = adjusted.argmax(axis=1)
-            macro_f1 = f1_score(y_true, pred, average="macro")
-            acc = accuracy_score(y_true, pred)
-            row = {
-                "smoothing": smoothing,
-                "alpha": alpha,
-                "macro_f1": macro_f1,
-                "delta_macro_f1": macro_f1 - base_macro_f1,
-                "accuracy": acc,
-                "delta_accuracy": acc - base_acc,
-                "changed_predictions": int((pred != base_pred).sum()),
-            }
-            rows.append(row)
-            if best is None or row["macro_f1"] > best["macro_f1"]:
-                best = row
+    print(f"Base Macro-F1: {base_f1:.6f} | Acc: {base_acc:.6f}")
 
-    results = pd.DataFrame(rows).sort_values(["macro_f1", "accuracy"], ascending=False)
-    results.to_csv(out_dir / "transition_prior_grid.csv", index=False)
+    prior_mats = {}
+    for order in [1, 2, 3]:
+        table, global_logp = make_prior(train_rows, order=order, smoothing=args.smoothing)
+        prior_mats[order] = get_prior_matrix(val_samples, table, global_logp, order=order)
+        print(f"order={order} table size={len(table)}")
 
-    # Save best adjusted validation predictions.
-    assert best is not None
-    best_log_prior, best_global = build_log_prior(prior_df, num_classes, best["smoothing"])
-    best_logits = apply_prior(logits, last_actions, best_log_prior, best_global, best["alpha"])
-    best_pred = best_logits.argmax(axis=1)
-    best_conf = np.exp(best_logits - best_logits.max(axis=1, keepdims=True))
-    best_conf = best_conf / best_conf.sum(axis=1, keepdims=True)
+    cands = []
 
-    adj_df = val_df.copy()
-    adj_df["base_pred_id"] = base_pred
-    adj_df["base_pred_action"] = [id2action[i] for i in base_pred]
-    adj_df["prior_pred_id"] = best_pred
-    adj_df["prior_pred_action"] = [id2action[i] for i in best_pred]
-    adj_df["prior_confidence"] = best_conf.max(axis=1)
-    adj_df["prior_correct"] = best_pred == y_true
-    adj_df["prior_changed"] = best_pred != base_pred
-    adj_df.to_csv(out_dir / "val_predictions_with_best_prior.csv", index=False)
+    # alpha sweep. 너무 크게 주면 model을 망침. 0~0.8 정도부터.
+    grid = [0.0, 0.02, 0.05, 0.08, 0.10, 0.15, 0.20, 0.30, 0.40, 0.60, 0.80, 1.00]
 
-    # Save transition prior table for inspection / future script_deberta.py implementation.
-    prior_table_rows = []
-    for last_action, logp in sorted(best_log_prior.items()):
-        probs = np.exp(logp)
-        for i, action in enumerate(id2action):
-            prior_table_rows.append({
-                "last_action": last_action,
-                "action_id": i,
-                "action": action,
-                "prob": probs[i],
-                "log_prob": logp[i],
-            })
-    pd.DataFrame(prior_table_rows).to_csv(out_dir / "best_transition_prior_table.csv", index=False)
+    for a1 in grid:
+        for a2 in grid:
+            for a3 in grid:
+                adjusted = logits + a1 * prior_mats[1] + a2 * prior_mats[2] + a3 * prior_mats[3]
+                pred = adjusted.argmax(axis=1)
+                f1 = f1_score(y, pred, labels=labels, average="macro", zero_division=0)
+                acc = accuracy_score(y, pred)
+                changed = int((pred != base_pred).sum())
+                cands.append((f1, acc, changed, a1, a2, a3))
 
-    # Per-class comparison.
-    base_pc = per_class_f1_df(y_true, base_pred, id2action).rename(columns={
-        "precision": "base_precision", "recall": "base_recall", "f1": "base_f1"
-    })
-    prior_pc = per_class_f1_df(y_true, best_pred, id2action).rename(columns={
-        "precision": "prior_precision", "recall": "prior_recall", "f1": "prior_f1"
-    })
-    pc = base_pc.merge(prior_pc[["action", "prior_precision", "prior_recall", "prior_f1"]], on="action")
-    pc["delta_f1"] = pc["prior_f1"] - pc["base_f1"]
-    pc.sort_values("delta_f1").to_csv(out_dir / "per_class_prior_delta.csv", index=False)
+    cands = sorted(cands, reverse=True)
 
-    summary = {
-        "used_val_as_prior_source_warning": used_val_as_prior,
-        "val_csv": args.val_csv,
-        "val_logits": args.val_logits,
-        "prior_source": args.prior_source or "VAL_PREDICTIONS_FALLBACK_LEAKY_FOR_PROBING_ONLY",
-        "id2action": id2action,
-        "base": {"macro_f1": base_macro_f1, "accuracy": base_acc},
-        "best": best,
-        "recommendation": "use prior only if best alpha > 0 and delta_macro_f1 is positive on a non-leaky prior source",
-    }
-    with open(out_dir / "transition_prior_summary.json", "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
-
-    print("\n===== Transition prior tuning =====")
-    if used_val_as_prior:
-        print("[WARNING] prior_source was not provided, so the prior was estimated from validation labels.")
-        print("          This is useful only as a quick probe. For clean tuning, pass --prior_source data/train.csv")
-    print(f"Base Macro-F1: {base_macro_f1:.6f} | Acc: {base_acc:.6f}")
-    print("\nTop grid rows:")
-    print(results.head(15).to_string(index=False))
-    print("\nBest:")
-    print(json.dumps(best, ensure_ascii=False, indent=2))
-    print(f"\nSaved outputs to: {out_dir}")
+    print("\n===== TOP transition prior =====")
+    for f1, acc, changed, a1, a2, a3 in cands[:30]:
+        print(
+            f"macro_f1={f1:.6f} acc={acc:.6f} changed={changed} | "
+            f"a_last={a1:.2f} a_bigram={a2:.2f} a_trigram={a3:.2f}"
+        )
 
 
 if __name__ == "__main__":

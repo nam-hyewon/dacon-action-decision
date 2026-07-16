@@ -1,0 +1,100 @@
+{
+  "base_weights": {
+    "deberta": 0.17,
+    "kluebert": 0.16,
+    "roberta": 0.17,
+    "tabular": 0.43,
+    "xlmr": 0.07
+  },
+  "base_macro_f1": 0.7566153313347793,
+  "base_accuracy": 0.7563142857142857,
+  "meta_crossfit_macro_f1": 0.757210861116332,
+  "meta_crossfit_accuracy": 0.7567571428571429,
+  "gain_vs_base": 0.0005955297815526395,
+  "replace_n": 27215,
+  "replace_rate": 0.3887857142857143,
+  "routing_selection": "For each outer fold, kind/mode/threshold/margin are selected on the other four folds' OOF meta predictions and applied only to the held-out fold.",
+  "selected_by_fold": [
+    {
+      "outer_fold": 0,
+      "kind": "hgb_small",
+      "mode": "base_pred_file4",
+      "threshold": 0.30000000000000004,
+      "margin": null,
+      "tune_macro_f1": 0.7588035473238367,
+      "tune_accuracy": 0.7591386723279753,
+      "tune_replace_n": 23002,
+      "val_n": 13947,
+      "val_replace_n": 5803,
+      "val_replace_rate": 0.4160751416075142,
+      "val_macro_f1": 0.7536028649124118,
+      "val_accuracy": 0.7516311751631175
+    },
+    {
+      "outer_fold": 1,
+      "kind": "hgb_small",
+      "mode": "base_pred_file4",
+      "threshold": 0.25,
+      "margin": 0.1,
+      "tune_macro_f1": 0.7570246003508904,
+      "tune_accuracy": 0.7563271881152676,
+      "tune_replace_n": 16815,
+      "val_n": 14130,
+      "val_replace_n": 4172,
+      "val_replace_rate": 0.2952583156404813,
+      "val_macro_f1": 0.7582777493986936,
+      "val_accuracy": 0.7590941259731069
+    },
+    {
+      "outer_fold": 2,
+      "kind": "hgb_small",
+      "mode": "base_pred_file4",
+      "threshold": 0.30000000000000004,
+      "margin": null,
+      "tune_macro_f1": 0.7584335335689646,
+      "tune_accuracy": 0.7577446114704459,
+      "tune_replace_n": 22971,
+      "val_n": 14187,
+      "val_replace_n": 5834,
+      "val_replace_rate": 0.41122154084725454,
+      "val_macro_f1": 0.7552150312181886,
+      "val_accuracy": 0.7572425459928103
+    },
+    {
+      "outer_fold": 3,
+      "kind": "hgb_small",
+      "mode": "base_pred_file4",
+      "threshold": 0.30000000000000004,
+      "margin": null,
+      "tune_macro_f1": 0.7576346155515143,
+      "tune_accuracy": 0.7570920092543157,
+      "tune_replace_n": 23222,
+      "val_n": 13810,
+      "val_replace_n": 5583,
+      "val_replace_rate": 0.4042722664735699,
+      "val_macro_f1": 0.7584342068695973,
+      "val_accuracy": 0.7598841419261405
+    },
+    {
+      "outer_fold": 4,
+      "kind": "hgb_small",
+      "mode": "base_pred_file4",
+      "threshold": 0.30000000000000004,
+      "margin": null,
+      "tune_macro_f1": 0.7572105666614766,
+      "tune_accuracy": 0.7580696936191461,
+      "tune_replace_n": 22982,
+      "val_n": 13926,
+      "val_replace_n": 5823,
+      "val_replace_rate": 0.4181387333046101,
+      "val_macro_f1": 0.7602452747317658,
+      "val_accuracy": 0.7559241706161137
+    }
+  ],
+  "file4": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern"
+  ]
+}

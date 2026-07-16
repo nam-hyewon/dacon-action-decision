@@ -1,0 +1,14 @@
+{
+  "name": "deberta_base_eda_state4_seed43_oof",
+  "rows": 70000,
+  "macro_f1": 0.7259041053618888,
+  "per_fold_macro_f1": {
+    "0": 0.7237711876104134,
+    "1": 0.7256113645648166,
+    "2": 0.718923440803786,
+    "3": 0.7279110062053438,
+    "4": 0.7329478052966004
+  },
+  "score_type": "raw_logit",
+  "row_order": "data/train.jsonl 순서 == index.csv 순서"
+}

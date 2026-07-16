@@ -1,0 +1,15 @@
+class,support,correct,errors,error_rate,confusion_1,confusion_1_count,confusion_2,confusion_2_count,confusion_3,confusion_3_count,confusion_4,confusion_4_count,confusion_5,confusion_5_count
+grep_search,9912,5309,4603,0.4643866020984665,read_file,2749,list_directory,1394,glob_pattern,416,edit_file,16,lint_or_typecheck,8
+read_file,9257,5778,3479,0.37582370098303985,list_directory,1658,grep_search,1333,glob_pattern,445,edit_file,13,run_bash,11
+glob_pattern,5284,3140,2144,0.4057532172596518,read_file,897,list_directory,765,grep_search,464,edit_file,9,run_tests,5
+list_directory,4329,2696,1633,0.37722337722337723,read_file,1020,grep_search,407,glob_pattern,186,run_bash,10,edit_file,4
+ask_user,2701,1553,1148,0.4250277674935209,plan_task,885,web_search,203,grep_search,13,read_file,11,edit_file,11
+run_bash,5068,4149,919,0.1813338595106551,run_tests,498,lint_or_typecheck,365,read_file,19,grep_search,11,list_directory,10
+run_tests,4561,3682,879,0.1927208945406709,run_bash,484,lint_or_typecheck,360,read_file,12,grep_search,10,edit_file,5
+lint_or_typecheck,2283,1499,784,0.3434077967586509,run_tests,387,run_bash,373,read_file,6,apply_patch,5,glob_pattern,5
+plan_task,2679,2032,647,0.24150802538260546,ask_user,443,web_search,147,list_directory,14,grep_search,12,read_file,9
+web_search,1273,892,381,0.2992930086410055,plan_task,185,ask_user,162,edit_file,8,glob_pattern,7,grep_search,6
+edit_file,11171,10950,221,0.019783367648375256,apply_patch,192,read_file,11,run_bash,5,grep_search,4,write_file,2
+apply_patch,4823,4626,197,0.040845946506323866,edit_file,189,read_file,3,lint_or_typecheck,3,grep_search,1,run_tests,1
+write_file,1481,1462,19,0.012829169480081027,edit_file,13,run_bash,4,list_directory,1,apply_patch,1,glob_pattern,0
+respond_only,5178,5178,0,0.0,read_file,0,grep_search,0,list_directory,0,glob_pattern,0,edit_file,0

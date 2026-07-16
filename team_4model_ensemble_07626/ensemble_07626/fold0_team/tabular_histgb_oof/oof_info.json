@@ -1,0 +1,65 @@
+{
+  "model_name": "tabular_histgb_5fold",
+  "folds_dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_folds",
+  "num_folds": 5,
+  "n": 70000,
+  "logits_shape": [
+    70000,
+    14
+  ],
+  "macro_f1": 0.45904194462964565,
+  "accuracy": 0.4876857142857143,
+  "folds": [
+    {
+      "fold": 0,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_folds/tabular_histgb_fold0",
+      "n": 13947,
+      "macro_f1": 0.45538486698542296,
+      "accuracy": 0.48289954828995485
+    },
+    {
+      "fold": 1,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_folds/tabular_histgb_fold1",
+      "n": 14130,
+      "macro_f1": 0.4619277283324764,
+      "accuracy": 0.4896673743807502
+    },
+    {
+      "fold": 2,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_folds/tabular_histgb_fold2",
+      "n": 14187,
+      "macro_f1": 0.45427882213276927,
+      "accuracy": 0.4845280890956509
+    },
+    {
+      "fold": 3,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_folds/tabular_histgb_fold3",
+      "n": 13810,
+      "macro_f1": 0.4588184303481831,
+      "accuracy": 0.49007965242577844
+    },
+    {
+      "fold": 4,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/tabular_folds/tabular_histgb_fold4",
+      "n": 13926,
+      "macro_f1": 0.4644736677150457,
+      "accuracy": 0.4913112164296998
+    }
+  ],
+  "classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ]
+}

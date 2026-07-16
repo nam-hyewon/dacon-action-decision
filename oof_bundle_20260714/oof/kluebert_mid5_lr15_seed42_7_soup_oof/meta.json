@@ -1,0 +1,14 @@
+{
+  "name": "kluebert_mid5_lr15_seed42_7_soup_oof",
+  "rows": 70000,
+  "macro_f1": 0.7350109606257135,
+  "per_fold_macro_f1": {
+    "0": 0.7322485865805012,
+    "1": 0.7375657239205192,
+    "2": 0.7328278139159318,
+    "3": 0.7384057714373018,
+    "4": 0.7326043166883717
+  },
+  "score_type": "raw_logit",
+  "row_order": "data/train.jsonl 순서 == index.csv 순서"
+}

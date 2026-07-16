@@ -1,0 +1,40 @@
+{
+  "base": {
+    "macro_f1": 0.7244125262363397,
+    "accuracy": 0.7341428571428571
+  },
+  "best": {
+    "mode": "router",
+    "gamma": "greedy_per_target",
+    "macro_f1": 0.7312762179608908,
+    "delta_macro_f1": 0.006863691724551146,
+    "accuracy": 0.7393571428571428,
+    "delta_accuracy": 0.005214285714285727,
+    "changed_predictions": 640
+  },
+  "greedy": {
+    "macro_f1": 0.7312762179608908,
+    "delta_macro_f1": 0.006863691724551146,
+    "accuracy": 0.7393571428571428,
+    "delta_accuracy": 0.005214285714285727,
+    "changed_predictions": 640
+  },
+  "targets": [
+    "web_search",
+    "list_directory",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "read_file",
+    "grep_search",
+    "run_tests",
+    "run_bash",
+    "glob_pattern"
+  ],
+  "modes": [
+    "router",
+    "prompt_meta",
+    "prompt"
+  ],
+  "out_dir": "submit/model/kluebert_mid5_lr15_focal1/specialist_boosters_fine"
+}

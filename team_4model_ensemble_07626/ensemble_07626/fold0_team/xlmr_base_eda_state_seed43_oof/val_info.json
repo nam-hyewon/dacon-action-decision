@@ -1,0 +1,65 @@
+{
+  "model_name": "xlmr_base_eda_state_seed43",
+  "folds_dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/xlmr_folds",
+  "num_folds": 5,
+  "n": 70000,
+  "logits_shape": [
+    70000,
+    14
+  ],
+  "macro_f1": 0.7167154613191438,
+  "accuracy": 0.7279,
+  "folds": [
+    {
+      "fold": 0,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/xlmr_folds/xlmr_base_eda_state_fold0_seed43",
+      "n": 13947,
+      "macro_f1": 0.7137125295759568,
+      "accuracy": 0.7220190722019072
+    },
+    {
+      "fold": 1,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/xlmr_folds/xlmr_base_eda_state_fold1_seed43",
+      "n": 14130,
+      "macro_f1": 0.7193304805614843,
+      "accuracy": 0.73517338995046
+    },
+    {
+      "fold": 2,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/xlmr_folds/xlmr_base_eda_state_fold2_seed43",
+      "n": 14187,
+      "macro_f1": 0.7043657997051771,
+      "accuracy": 0.7185451469655318
+    },
+    {
+      "fold": 3,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/xlmr_folds/xlmr_base_eda_state_fold3_seed43",
+      "n": 13810,
+      "macro_f1": 0.7267405982055585,
+      "accuracy": 0.7399710354815351
+    },
+    {
+      "fold": 4,
+      "dir": "team_4model_ensemble_07626/ensemble_07626/fold0_team/xlmr_folds/xlmr_base_eda_state_fold4_seed43",
+      "n": 13926,
+      "macro_f1": 0.7187179183447313,
+      "accuracy": 0.7239695533534396
+    }
+  ],
+  "classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ]
+}

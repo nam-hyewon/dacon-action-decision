@@ -1,0 +1,29 @@
+{
+  "best_val_macro_f1": 0.7279110062053438,
+  "num_val": 13810,
+  "all_classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ],
+  "model_name": "microsoft/deberta-v3-base",
+  "text_mode": "eda_state",
+  "max_len": 512,
+  "batch_size": 4,
+  "epochs": 4,
+  "lr": 1e-05,
+  "weight_decay": 0.01,
+  "warmup_ratio": 0.06,
+  "seed": 42
+}

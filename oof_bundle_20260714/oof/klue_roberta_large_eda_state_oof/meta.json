@@ -1,0 +1,14 @@
+{
+  "name": "klue_roberta_large_eda_state_oof",
+  "rows": 70000,
+  "macro_f1": 0.7334016381477655,
+  "per_fold_macro_f1": {
+    "0": 0.7359294916751545,
+    "1": 0.7426290140931766,
+    "2": 0.7247898269421027,
+    "3": 0.7263826443242304,
+    "4": 0.7349278771413676
+  },
+  "score_type": "raw_logit",
+  "row_order": "data/train.jsonl 순서 == index.csv 순서"
+}
