@@ -1,0 +1,408 @@
+===== START roberta_mid5_lr2 =====
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (525 > 512). Running this sequence through the model will result in indexing errors
+Device: cuda
+Model: klue/roberta-base
+MAX_LEN: 512 | BATCH_SIZE: 16 | EPOCHS: 5
+TEXT_MODE: eda_state_mid
+SAVE_DIR: /root/dacon-action-decision/submit/model/roberta_mid5_lr2
+samples: 70000 | classes: 14
+label counts: Counter({4: 11171, 1: 9912, 0: 9257, 3: 5284, 13: 5178, 7: 5068, 6: 4823, 8: 4561, 2: 4329, 10: 2701, 11: 2679, 9: 2283, 5: 1481, 12: 1273})
+train: 56000 | val: 14000
+Token length stats:
+  n: 5000 | mean: 445.0 | p50: 445 | p90: 499 | p95: 516 | p99: 556 | max: 632
+  over_MAX_LEN(512): 5.90%
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 4234.91it/s]
+[transformers] [1mRobertaForSequenceClassification LOAD REPORT[0m from: klue/roberta-base
+Key                        | Status     | 
+---------------------------+------------+-
+lm_head.layer_norm.bias    | UNEXPECTED | 
+lm_head.bias               | UNEXPECTED | 
+lm_head.dense.bias         | UNEXPECTED | 
+lm_head.dense.weight       | UNEXPECTED | 
+lm_head.layer_norm.weight  | UNEXPECTED | 
+classifier.out_proj.bias   | MISSING    | 
+classifier.out_proj.weight | MISSING    | 
+classifier.dense.bias      | MISSING    | 
+classifier.dense.weight    | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+epoch 1 | step 200/3500 | loss 2.5537
+epoch 1 | step 400/3500 | loss 2.3993
+epoch 1 | step 600/3500 | loss 1.6804
+epoch 1 | step 800/3500 | loss 1.2964
+epoch 1 | step 1000/3500 | loss 1.2002
+epoch 1 | step 1200/3500 | loss 1.1019
+epoch 1 | step 1400/3500 | loss 1.0389
+epoch 1 | step 1600/3500 | loss 0.9956
+epoch 1 | step 1800/3500 | loss 0.9749
+epoch 1 | step 2000/3500 | loss 0.9205
+epoch 1 | step 2200/3500 | loss 0.9158
+epoch 1 | step 2400/3500 | loss 0.9214
+epoch 1 | step 2600/3500 | loss 0.9060
+epoch 1 | step 2800/3500 | loss 0.8446
+epoch 1 | step 3000/3500 | loss 0.8831
+epoch 1 | step 3200/3500 | loss 0.8533
+epoch 1 | step 3400/3500 | loss 0.8259
+
+Epoch 1 Validation Macro-F1: 0.6382
+                   precision    recall  f1-score   support
+
+        read_file     0.4582    0.7115    0.5575      1851
+      grep_search     0.7220    0.4480    0.5529      1982
+   list_directory     0.3714    0.4503    0.4071       866
+     glob_pattern     0.7912    0.5128    0.6223      1057
+        edit_file     0.8923    0.8608    0.8763      2234
+       write_file     0.9547    0.9257    0.9400       296
+      apply_patch     0.7146    0.7990    0.7544       965
+         run_bash     0.8182    0.7019    0.7556      1013
+        run_tests     0.6716    0.5921    0.6294       912
+lint_or_typecheck     0.4256    0.6324    0.5088       457
+         ask_user     0.4642    0.7093    0.5612       540
+        plan_task     0.6355    0.3545    0.4551       536
+       web_search     0.4762    0.2353    0.3150       255
+     respond_only     0.9981    1.0000    0.9990      1036
+
+         accuracy                         0.6653     14000
+        macro avg     0.6710    0.6381    0.6382     14000
+     weighted avg     0.6990    0.6653    0.6669     14000
+
+New best F1: 0.6382. Saving to /root/dacon-action-decision/submit/model/roberta_mid5_lr2
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.94it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.94it/s]
+Saved validation outputs:
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_predictions.csv
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_logits.npy
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_info.json
+epoch 2 | step 200/3500 | loss 0.8282
+epoch 2 | step 400/3500 | loss 0.8115
+epoch 2 | step 600/3500 | loss 0.7790
+epoch 2 | step 800/3500 | loss 0.7638
+epoch 2 | step 1000/3500 | loss 0.8281
+epoch 2 | step 1200/3500 | loss 0.7468
+epoch 2 | step 1400/3500 | loss 0.7904
+epoch 2 | step 1600/3500 | loss 0.7754
+epoch 2 | step 1800/3500 | loss 0.7973
+epoch 2 | step 2000/3500 | loss 0.7607
+epoch 2 | step 2200/3500 | loss 0.7699
+epoch 2 | step 2400/3500 | loss 0.7561
+epoch 2 | step 2600/3500 | loss 0.7822
+epoch 2 | step 2800/3500 | loss 0.7742
+epoch 2 | step 3000/3500 | loss 0.7569
+epoch 2 | step 3200/3500 | loss 0.7427
+epoch 2 | step 3400/3500 | loss 0.7378
+
+Epoch 2 Validation Macro-F1: 0.6790
+                   precision    recall  f1-score   support
+
+        read_file     0.5270    0.5273    0.5271      1851
+      grep_search     0.6378    0.5394    0.5845      1982
+   list_directory     0.3680    0.6536    0.4709       866
+     glob_pattern     0.7781    0.5506    0.6449      1057
+        edit_file     0.9123    0.9687    0.9396      2234
+       write_file     0.9391    0.9899    0.9638       296
+      apply_patch     0.9400    0.7948    0.8613       965
+         run_bash     0.8451    0.6950    0.7627      1013
+        run_tests     0.6427    0.7730    0.7018       912
+lint_or_typecheck     0.5425    0.5033    0.5221       457
+         ask_user     0.5288    0.6463    0.5817       540
+        plan_task     0.5655    0.4347    0.4916       536
+       web_search     0.4866    0.4275    0.4551       255
+     respond_only     0.9990    0.9990    0.9990      1036
+
+         accuracy                         0.6987     14000
+        macro avg     0.6937    0.6788    0.6790     14000
+     weighted avg     0.7173    0.6987    0.7014     14000
+
+New best F1: 0.6790. Saving to /root/dacon-action-decision/submit/model/roberta_mid5_lr2
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.72it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.71it/s]
+Saved validation outputs:
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_predictions.csv
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_logits.npy
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_info.json
+epoch 3 | step 200/3500 | loss 0.7140
+epoch 3 | step 400/3500 | loss 0.7279
+epoch 3 | step 600/3500 | loss 0.7104
+epoch 3 | step 800/3500 | loss 0.7135
+epoch 3 | step 1000/3500 | loss 0.7143
+epoch 3 | step 1200/3500 | loss 0.7164
+epoch 3 | step 1400/3500 | loss 0.7152
+epoch 3 | step 1600/3500 | loss 0.7122
+epoch 3 | step 1800/3500 | loss 0.7305
+epoch 3 | step 2000/3500 | loss 0.7170
+epoch 3 | step 2200/3500 | loss 0.6947
+epoch 3 | step 2400/3500 | loss 0.6812
+epoch 3 | step 2600/3500 | loss 0.7188
+epoch 3 | step 2800/3500 | loss 0.6762
+epoch 3 | step 3000/3500 | loss 0.6801
+epoch 3 | step 3200/3500 | loss 0.7269
+epoch 3 | step 3400/3500 | loss 0.6895
+
+Epoch 3 Validation Macro-F1: 0.6945
+                   precision    recall  f1-score   support
+
+        read_file     0.5235    0.5900    0.5547      1851
+      grep_search     0.7113    0.4823    0.5749      1982
+   list_directory     0.3754    0.6085    0.4643       866
+     glob_pattern     0.6933    0.5989    0.6426      1057
+        edit_file     0.9448    0.9342    0.9395      2234
+       write_file     0.9671    0.9932    0.9800       296
+      apply_patch     0.8517    0.8870    0.8690       965
+         run_bash     0.7748    0.7947    0.7846      1013
+        run_tests     0.6871    0.7632    0.7231       912
+lint_or_typecheck     0.6677    0.4923    0.5668       457
+         ask_user     0.6105    0.5167    0.5597       540
+        plan_task     0.6145    0.5205    0.5636       536
+       web_search     0.4110    0.6431    0.5015       255
+     respond_only     0.9990    0.9990    0.9990      1036
+
+         accuracy                         0.7091     14000
+        macro avg     0.7023    0.7017    0.6945     14000
+     weighted avg     0.7265    0.7091    0.7111     14000
+
+New best F1: 0.6945. Saving to /root/dacon-action-decision/submit/model/roberta_mid5_lr2
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.72it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.71it/s]
+Saved validation outputs:
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_predictions.csv
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_logits.npy
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_info.json
+epoch 4 | step 200/3500 | loss 0.6503
+epoch 4 | step 400/3500 | loss 0.6901
+epoch 4 | step 600/3500 | loss 0.6526
+epoch 4 | step 800/3500 | loss 0.6638
+epoch 4 | step 1000/3500 | loss 0.6658
+epoch 4 | step 1200/3500 | loss 0.6755
+epoch 4 | step 1400/3500 | loss 0.6509
+epoch 4 | step 1600/3500 | loss 0.6605
+epoch 4 | step 1800/3500 | loss 0.6703
+epoch 4 | step 2000/3500 | loss 0.6533
+epoch 4 | step 2200/3500 | loss 0.6755
+epoch 4 | step 2400/3500 | loss 0.6905
+epoch 4 | step 2600/3500 | loss 0.6397
+epoch 4 | step 2800/3500 | loss 0.6683
+epoch 4 | step 3000/3500 | loss 0.6605
+epoch 4 | step 3200/3500 | loss 0.6497
+epoch 4 | step 3400/3500 | loss 0.6695
+
+Epoch 4 Validation Macro-F1: 0.7039
+                   precision    recall  f1-score   support
+
+        read_file     0.5218    0.5808    0.5497      1851
+      grep_search     0.6500    0.5565    0.5996      1982
+   list_directory     0.3860    0.5081    0.4387       866
+     glob_pattern     0.7453    0.5951    0.6618      1057
+        edit_file     0.9412    0.9602    0.9506      2234
+       write_file     0.9548    1.0000    0.9769       296
+      apply_patch     0.9082    0.8715    0.8895       965
+         run_bash     0.8455    0.7295    0.7833      1013
+        run_tests     0.6684    0.8268    0.7392       912
+lint_or_typecheck     0.6170    0.5252    0.5674       457
+         ask_user     0.6039    0.6352    0.6191       540
+        plan_task     0.6270    0.5709    0.5977       536
+       web_search     0.4769    0.4863    0.4816       255
+     respond_only     0.9990    1.0000    0.9995      1036
+
+         accuracy                         0.7194     14000
+        macro avg     0.7104    0.7033    0.7039     14000
+     weighted avg     0.7289    0.7194    0.7212     14000
+
+New best F1: 0.7039. Saving to /root/dacon-action-decision/submit/model/roberta_mid5_lr2
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.75it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.75it/s]
+Saved validation outputs:
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_predictions.csv
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_logits.npy
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_info.json
+epoch 5 | step 200/3500 | loss 0.6307
+epoch 5 | step 400/3500 | loss 0.6178
+epoch 5 | step 600/3500 | loss 0.5969
+epoch 5 | step 800/3500 | loss 0.6237
+epoch 5 | step 1000/3500 | loss 0.6060
+epoch 5 | step 1200/3500 | loss 0.6315
+epoch 5 | step 1400/3500 | loss 0.6265
+epoch 5 | step 1600/3500 | loss 0.6250
+epoch 5 | step 1800/3500 | loss 0.6146
+epoch 5 | step 2000/3500 | loss 0.6228
+epoch 5 | step 2200/3500 | loss 0.6231
+epoch 5 | step 2400/3500 | loss 0.6253
+epoch 5 | step 2600/3500 | loss 0.6448
+epoch 5 | step 2800/3500 | loss 0.6019
+epoch 5 | step 3000/3500 | loss 0.6105
+epoch 5 | step 3200/3500 | loss 0.6185
+epoch 5 | step 3400/3500 | loss 0.6175
+
+Epoch 5 Validation Macro-F1: 0.7068
+                   precision    recall  f1-score   support
+
+        read_file     0.5205    0.5770    0.5473      1851
+      grep_search     0.6131    0.5868    0.5996      1982
+   list_directory     0.3889    0.4446    0.4149       866
+     glob_pattern     0.7457    0.5771    0.6507      1057
+        edit_file     0.9463    0.9548    0.9505      2234
+       write_file     0.9642    1.0000    0.9818       296
+      apply_patch     0.8979    0.8839    0.8909       965
+         run_bash     0.8301    0.7621    0.7946      1013
+        run_tests     0.6970    0.8070    0.7480       912
+lint_or_typecheck     0.6419    0.5492    0.5920       457
+         ask_user     0.6502    0.5611    0.6024       540
+        plan_task     0.6137    0.6343    0.6239       536
+       web_search     0.4662    0.5412    0.5009       255
+     respond_only     0.9971    1.0000    0.9986      1036
+
+         accuracy                         0.7203     14000
+        macro avg     0.7123    0.7057    0.7068     14000
+     weighted avg     0.7265    0.7203    0.7216     14000
+
+New best F1: 0.7068. Saving to /root/dacon-action-decision/submit/model/roberta_mid5_lr2
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.73it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  2.72it/s]
+Saved validation outputs:
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_predictions.csv
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_logits.npy
+ - /root/dacon-action-decision/submit/model/roberta_mid5_lr2/val_info.json
+Training done.
+Best Validation Macro-F1: 0.7068499030474668
+Saved model dir: /root/dacon-action-decision/submit/model/roberta_mid5_lr2
+===== Specialist booster tuning =====
+Base Macro-F1: 0.7068499030474668 | Acc: 0.7202857142857143
+
+[INFO] Training specialist mode=router
+
+[INFO] Training specialist mode=prompt_meta
+
+[INFO] Training specialist mode=prompt
+
+Top global:
+       mode  gamma  macro_f1  delta_macro_f1  accuracy  delta_accuracy  changed_predictions
+     router   0.75  0.720466        0.013616  0.729286        0.009000                 1360
+     router   1.00  0.719084        0.012234  0.728786        0.008500                 1603
+     router   1.25  0.716958        0.010108  0.727286        0.007000                 1782
+     router   0.50  0.716615        0.009765  0.726786        0.006500                 1054
+     router   0.40  0.715940        0.009090  0.727000        0.006714                  889
+     router   1.50  0.715772        0.008922  0.726429        0.006143                 1907
+     router   0.25  0.712873        0.006024  0.724786        0.004500                  608
+     router   0.15  0.711452        0.004602  0.723857        0.003571                  371
+prompt_meta   0.25  0.711416        0.004566  0.723643        0.003357                  680
+prompt_meta   0.40  0.710814        0.003964  0.723071        0.002786                  992
+prompt_meta   0.50  0.710075        0.003226  0.722143        0.001857                 1169
+prompt_meta   0.15  0.709780        0.002930  0.722929        0.002643                  438
+prompt_meta   0.75  0.709375        0.002525  0.721929        0.001643                 1484
+     router   0.00  0.706850        0.000000  0.720286        0.000000                    0
+prompt_meta   0.00  0.706850        0.000000  0.720286        0.000000                    0
+     prompt   0.00  0.706850        0.000000  0.720286        0.000000                    0
+prompt_meta   1.00  0.706526       -0.000324  0.719857       -0.000429                 1708
+     prompt   0.15  0.702797       -0.004053  0.718786       -0.001500                  440
+prompt_meta   1.25  0.702279       -0.004571  0.716786       -0.003500                 1887
+     prompt   0.25  0.700062       -0.006788  0.717429       -0.002857                  722
+prompt_meta   1.50  0.700061       -0.006789  0.714643       -0.005643                 2017
+     prompt   0.40  0.691361       -0.015489  0.712643       -0.007643                 1130
+     prompt   0.50  0.685011       -0.021839  0.709357       -0.010929                 1354
+     prompt   0.75  0.670484       -0.036366  0.699357       -0.020929                 1866
+     prompt   1.00  0.651757       -0.055093  0.685143       -0.035143                 2332
+     prompt   1.25  0.639927       -0.066923  0.674714       -0.045571                 2696
+     prompt   1.50  0.623073       -0.083777  0.659214       -0.061071                 3089
+
+[INFO] Running greedy per-target gamma selection...
+
+Greedy result:
+{
+  "macro_f1": 0.7242307473362247,
+  "delta_macro_f1": 0.01738084428875797,
+  "accuracy": 0.7314285714285714,
+  "delta_accuracy": 0.011142857142857121,
+  "changed_predictions": 1201
+}
+
+Best:
+{
+  "mode": "router",
+  "gamma": "greedy_per_target",
+  "macro_f1": 0.7242307473362247,
+  "delta_macro_f1": 0.01738084428875797,
+  "accuracy": 0.7314285714285714,
+  "delta_accuracy": 0.011142857142857121,
+  "changed_predictions": 1201
+}
+
+Saved:
+ - submit/model/roberta_mid5_lr2/specialist_boosters/specialist_global_grid.csv
+ - submit/model/roberta_mid5_lr2/specialist_boosters/specialist_summary.json
+ - submit/model/roberta_mid5_lr2/specialist_boosters/per_class_specialist_delta.csv
+ - submit/model/roberta_mid5_lr2/specialist_boosters/val_predictions_with_specialists.csv
+===== DONE roberta_mid5_lr2 =====
+===== START roberta_state5_lr2 =====
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (1098 > 512). Running this sequence through the model will result in indexing errors
+Device: cuda
+Model: klue/roberta-base
+MAX_LEN: 512 | BATCH_SIZE: 16 | EPOCHS: 5
+TEXT_MODE: eda_state
+SAVE_DIR: /root/dacon-action-decision/submit/model/roberta_state5_lr2
+samples: 70000 | classes: 14
+label counts: Counter({4: 11171, 1: 9912, 0: 9257, 3: 5284, 13: 5178, 7: 5068, 6: 4823, 8: 4561, 2: 4329, 10: 2701, 11: 2679, 9: 2283, 5: 1481, 12: 1273})
+train: 56000 | val: 14000
+Token length stats:
+  n: 5000 | mean: 857.2 | p50: 916 | p90: 1133 | p95: 1177 | p99: 1274 | max: 1422
+  over_MAX_LEN(512): 87.14%
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 4086.36it/s]
+[transformers] [1mRobertaForSequenceClassification LOAD REPORT[0m from: klue/roberta-base
+Key                        | Status     | 
+---------------------------+------------+-
+lm_head.dense.bias         | UNEXPECTED | 
+lm_head.layer_norm.bias    | UNEXPECTED | 
+lm_head.bias               | UNEXPECTED | 
+lm_head.layer_norm.weight  | UNEXPECTED | 
+lm_head.dense.weight       | UNEXPECTED | 
+classifier.out_proj.bias   | MISSING    | 
+classifier.dense.weight    | MISSING    | 
+classifier.out_proj.weight | MISSING    | 
+classifier.dense.bias      | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+epoch 1 | step 200/3500 | loss 2.5494
+epoch 1 | step 400/3500 | loss 2.4268
+epoch 1 | step 600/3500 | loss 1.8978
+epoch 1 | step 800/3500 | loss 1.3705
+epoch 1 | step 1000/3500 | loss 1.2532
+epoch 1 | step 1200/3500 | loss 1.1413
+epoch 1 | step 1400/3500 | loss 1.1006
+epoch 1 | step 1600/3500 | loss 1.0582
+epoch 1 | step 1800/3500 | loss 1.0622
+epoch 1 | step 2000/3500 | loss 0.9932
+epoch 1 | step 2200/3500 | loss 0.9856
+epoch 1 | step 2400/3500 | loss 0.9877
+epoch 1 | step 2600/3500 | loss 0.9608
+epoch 1 | step 2800/3500 | loss 0.8956
+epoch 1 | step 3000/3500 | loss 0.8932
+epoch 1 | step 3200/3500 | loss 0.8713
+epoch 1 | step 3400/3500 | loss 0.8395
+
+Epoch 1 Validation Macro-F1: 0.6453
+                   precision    recall  f1-score   support
+
+        read_file     0.4917    0.5619    0.5245      1851
+      grep_search     0.6541    0.4894    0.5599      1982
+   list_directory     0.3465    0.6201    0.4445       866
+     glob_pattern     0.7850    0.5147    0.6217      1057
+        edit_file     0.8909    0.9252    0.9078      2234
+       write_file     0.9574    0.9122    0.9343       296
+      apply_patch     0.8188    0.8197    0.8193       965
+         run_bash     0.8499    0.6654    0.7464      1013
+        run_tests     0.6738    0.5866    0.6272       912
+lint_or_typecheck     0.4279    0.5974    0.4986       457
+         ask_user     0.4590    0.4981    0.4778       540
+        plan_task     0.5357    0.5746    0.5545       536
+       web_search     0.4161    0.2627    0.3221       255
+     respond_only     0.9914    0.9990    0.9952      1036
+
+         accuracy                         0.6700     14000
+        macro avg     0.6642    0.6448    0.6453     14000
+     weighted avg     0.6957    0.6700    0.6744     14000
+
+New best F1: 0.6453. Saving to /root/dacon-action-decision/submit/model/roberta_state5_lr2
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  3.21it/s]Writing model shards: 100%|██████████| 1/1 [00:00<00:00,  3.20it/s]
+Saved validation outputs:
+ - /root/dacon-action-decision/submit/model/roberta_state5_lr2/val_predictions.csv
+ - /root/dacon-action-decision/submit/model/roberta_state5_lr2/val_logits.npy
+ - /root/dacon-action-decision/submit/model/roberta_state5_lr2/val_info.json

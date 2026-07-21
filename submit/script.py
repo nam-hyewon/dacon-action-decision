@@ -1,26 +1,240 @@
-# =======================
-# 1. 라이브러리 불러오기
-# =======================
-# csv/json/os: 표준 라이브러리로 데이터를 읽고 결과를 씁니다.
-# joblib: 학습 때 저장한 모델(.pkl)을 불러옵니다.
+# =============================================================================
+# DACON AI Agent Action Decision Prediction — Inference (submission entrypoint)
+#
+# Pipeline:
+#   1. klue/roberta-base classifier (model/roberta_eda_state4, text_mode=eda_state)
+#      -> raw fp32 logits over 14 action classes
+#   2. Specialist boosters (model/roberta_eda_state4/specialist_boosters/
+#      specialists.joblib): per-target one-vs-rest TF-IDF LogisticRegression on
+#      router-mode text, frozen after tuning. Adds gamma * safe_logit(p) onto
+#      the matching class logit.
+#   3. argmax -> action -> submission.csv
+#
+# IMPORTANT (correctness):
+#   - GPU inference runs in fp16 for speed (eval server is a T4 with a 10-min
+#     limit). Verified on the validation split that fp16 reproduces the fp32
+#     booster score (base 0.7194, +booster 0.7318 in both precisions).
+#   - The specialist boosters are applied in a version-independent way: their
+#     TF-IDF vocab/idf + logistic coef/intercept are loaded from specialists.npz
+#     and the transform is recomputed in numpy (no sklearn unpickle), so the
+#     result does not depend on the server's scikit-learn version.
+#   - The klue model uses the `eda_state` text builder; the specialists use the
+#     `router` text builder. These are two independent feature pipelines combined
+#     at the logit level, so both builders are reproduced verbatim below.
+#
+# Local validation Macro-F1: base 0.7194 -> +booster 0.7318.
+# =============================================================================
 import csv
 import json
 import os
+import re
+from collections import Counter
 
-import joblib
-
-
-# =======================
-# 2. 입력 전처리 유틸 (학습 때와 동일하게 current_prompt만 사용)
-# =======================
-# 추론 입력은 반드시 '학습 때와 똑같은 방식'으로 만들어야 합니다.
-# 학습에서 입력으로 current_prompt 문자열만 사용했으므로, 여기서도 동일하게 뽑습니다.
-
-REQUIRED_KEYS = ("id", "session_meta", "history", "current_prompt")
+import numpy as np
+from scipy import sparse
+from scipy.special import expit
+import torch
+from torch.utils.data import Dataset, DataLoader
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 
+# --------------------------------------------------------------------------- #
+# Paths                                                                        #
+# --------------------------------------------------------------------------- #
+MODEL_DIR = "./model/roberta_eda_state4"
+SPEC_NPZ = "./model/roberta_eda_state4/specialist_boosters/specialists.npz"
+SPEC_VOCAB = "./model/roberta_eda_state4/specialist_boosters/specialists_vocab.json"
+DATA_DIR = "./data"
+OUT_DIR = "./output"
+
+TEST_PATH = os.path.join(DATA_DIR, "test.jsonl")
+SAMPLE_SUB_PATH = os.path.join(DATA_DIR, "sample_submission.csv")
+OUT_PATH = os.path.join(OUT_DIR, "submission.csv")
+
+MAX_LEN = 512
+BATCH_SIZE = 32
+EPS = 1e-5
+
+
+# --------------------------------------------------------------------------- #
+# Shared history / feature helpers (identical in train_roberta & tune scripts) #
+# --------------------------------------------------------------------------- #
+def get_actions(sample):
+    return [
+        str(h.get("name", ""))
+        for h in sample.get("history", [])
+        if h.get("role") == "assistant_action"
+    ]
+
+
+def get_last_action(sample):
+    actions = get_actions(sample)
+    return actions[-1] if actions else "none"
+
+
+def get_prev_action(sample):
+    actions = get_actions(sample)
+    return actions[-2] if len(actions) >= 2 else "none"
+
+
+def get_step_from_id(sid):
+    m = re.search(r"step_(\d+)", str(sid))
+    return m.group(1) if m else "none"
+
+
+def bucket_int(value, cuts):
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return "unknown"
+    for name, upper in cuts:
+        if v <= upper:
+            return name
+    return f"gt_{cuts[-1][1]}"
+
+
+def compact_history(sample, max_turns=10):
+    hist = sample.get("history", [])[-max_turns:]
+    parts, actions, user_utts = [], [], []
+    last_result = ""
+    for h in hist:
+        role = h.get("role", "")
+        if role == "user":
+            txt = str(h.get("content", ""))
+            user_utts.append(txt)
+            parts.append(f"U: {txt}")
+        elif role == "assistant_action":
+            name = str(h.get("name", ""))
+            args = str(h.get("args", ""))
+            result = str(h.get("result_summary", ""))
+            actions.append(name)
+            last_result = result
+            parts.append(f"ACTION: {name} ARGS: {args} RESULT: {result}")
+    return {
+        "history_text": "\n".join(parts),
+        "action_seq": " > ".join(actions),
+        "recent_users": "\n".join(user_utts[-3:]),
+        "last_result": last_result,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# klue text builder — must match train_roberta.build_text_eda_state exactly    #
+# --------------------------------------------------------------------------- #
+def build_text_eda_state(sample):
+    meta = sample.get("session_meta", {})
+    workspace = meta.get("workspace", {})
+    history = sample.get("history", [])
+    current_prompt = str(sample.get("current_prompt", ""))
+
+    ch = compact_history(sample)
+    user_turns = [
+        str(h.get("content", ""))
+        for h in history
+        if h.get("role") == "user"
+    ]
+
+    language_mix = workspace.get("language_mix", {}) or {}
+    main_lang = max(language_mix, key=language_mix.get) if language_mix else "none"
+    open_files = workspace.get("open_files", [])
+    lang_mix = " ".join(f"{k}:{v}" for k, v in language_mix.items())
+
+    prompt_len = len(current_prompt)
+    history_len = len(history)
+    turn_index = meta.get("turn_index", 0)
+
+    return "\n".join([
+        "[EDA_STATE_V2_PRIORITY_FRONT]",
+        "[CURRENT_PROMPT]",
+        current_prompt,
+        "[CURRENT_PROMPT_REPEAT]",
+        current_prompt,
+
+        "[HIGH_PRIORITY_EDA_FEATURES]",
+        f"prompt_len: {prompt_len}",
+        f"prompt_len_bucket: {bucket_int(prompt_len, [('short', 45), ('medium', 80), ('long', 120)])}",
+        f"is_first_turn: {str(history_len == 0)}",
+        f"history_len: {history_len}",
+        f"history_bucket: {bucket_int(history_len, [('h0', 0), ('h1_3', 3), ('h4_7', 7), ('h8_12', 12)])}",
+        f"last_action: {get_last_action(sample)}",
+        f"prev_action: {get_prev_action(sample)}",
+        f"action_sequence: {ch['action_seq']}",
+        f"turn_index: {turn_index}",
+        f"turn_bucket: {bucket_int(turn_index, [('t1', 1), ('t2_4', 4), ('t5_8', 8), ('t9_12', 12)])}",
+        f"step: {get_step_from_id(sample.get('id', ''))}",
+        f"last_ci_status: {workspace.get('last_ci_status', '')}",
+        f"ci_failed: {str(workspace.get('last_ci_status', '') == 'failed')}",
+        f"git_dirty: {workspace.get('git_dirty', '')}",
+
+        "[MEDIUM_PRIORITY_CONTEXT]",
+        "[RECENT_USER_REQUESTS]",
+        "\n".join(user_turns[-3:]),
+        "[LAST_ACTION_RESULT]",
+        ch["last_result"],
+
+        "[LOW_PRIORITY_WORKSPACE]",
+        f"num_open_files: {len(open_files)}",
+        f"main_lang: {main_lang}",
+        f"user_tier: {meta.get('user_tier', '')}",
+        f"language_pref: {meta.get('language_pref', '')}",
+        f"budget_tokens_remaining: {meta.get('budget_tokens_remaining', '')}",
+        f"elapsed_session_sec: {meta.get('elapsed_session_sec', '')}",
+        "[OPEN_FILES]",
+        " ".join(map(str, open_files)),
+        f"language_mix: {lang_mix}",
+        f"loc: {workspace.get('loc', '')}",
+        "[COMPACT_HISTORY]",
+        ch["history_text"],
+    ])
+
+
+# --------------------------------------------------------------------------- #
+# Specialist text builder — must match tune_specialist_boosters.build_text     #
+# (mode="router") exactly, since the TF-IDF vectorizer was fit on this text.   #
+# --------------------------------------------------------------------------- #
+def build_text_router(sample):
+    meta = sample.get("session_meta", {})
+    workspace = meta.get("workspace", {})
+    current_prompt = str(sample.get("current_prompt", ""))
+    sid = str(sample.get("id", ""))
+    ch = compact_history(sample)
+    last_action = get_last_action(sample)
+    prev_action = get_prev_action(sample)
+    step = get_step_from_id(sid)
+    lm = workspace.get("language_mix", {}) or {}
+    main_lang = max(lm, key=lm.get) if lm else "none"
+    open_files = " ".join(map(str, workspace.get("open_files", [])))
+    lang_mix = " ".join(f"{k}:{v}" for k, v in lm.items())
+
+    return "\n".join([
+        "[ROUTER_TASK] Predict the next assistant action class.",
+        "[CURRENT_USER_REQUEST]", current_prompt,
+        "[CURRENT_USER_REQUEST_REPEAT]", current_prompt,
+        "[RECENT_USER_REQUESTS]", ch["recent_users"],
+        "[ACTION_SEQUENCE]", ch["action_seq"],
+        "[PREVIOUS_ACTION]", prev_action,
+        "[LAST_ACTION]", last_action,
+        "[LAST_ACTION_RESULT]", ch["last_result"],
+        "[WORKSPACE_STATE]",
+        f"step: {step}",
+        f"turn_index: {meta.get('turn_index', '')}",
+        f"user_tier: {meta.get('user_tier', '')}",
+        f"language_pref: {meta.get('language_pref', '')}",
+        f"budget_tokens_remaining: {meta.get('budget_tokens_remaining', '')}",
+        f"elapsed_session_sec: {meta.get('elapsed_session_sec', '')}",
+        f"git_dirty: {workspace.get('git_dirty', '')}",
+        f"last_ci_status: {workspace.get('last_ci_status', '')}",
+        f"main_lang: {main_lang}",
+        f"language_mix: {lang_mix}",
+        f"open_files: {open_files}",
+        "[COMPACT_HISTORY]", ch["history_text"],
+    ])
+
+
+# --------------------------------------------------------------------------- #
+# IO helpers                                                                   #
+# --------------------------------------------------------------------------- #
 def load_jsonl(path):
-    """평가 데이터(jsonl) 로드. 한 줄당 샘플 하나."""
     samples = []
     with open(path, encoding="utf-8") as f:
         for line_no, line in enumerate(f, start=1):
@@ -28,85 +242,25 @@ def load_jsonl(path):
             if not line:
                 continue
             try:
-                obj = json.loads(line)
+                samples.append(json.loads(line))
             except json.JSONDecodeError as e:
-                raise ValueError(f"{path}:{line_no} JSON 파싱 실패: {e}")
-            samples.append(obj)
+                raise ValueError(f"{path}:{line_no} JSON parsing failed: {e}")
     return samples
 
 
-def validate_samples(samples):
-    """필수 키 존재 여부 검증 (학습 데이터와 동일 스키마)."""
-    n_bad = 0
-    for s in samples:
-        for k in REQUIRED_KEYS:
-            if k not in s:
-                n_bad += 1
-                break
-    if n_bad:
-        print(f" 경고: 필수 키 누락 샘플 {n_bad}건 (빈 텍스트로 처리)")
-    return n_bad
+def load_labels(model_dir):
+    with open(os.path.join(model_dir, "labels.json"), encoding="utf-8") as f:
+        return json.load(f)["all_classes"]
 
-
-def extract_text(sample):
-    """모델 입력 텍스트 추출 — 학습 때와 동일하게 current_prompt만 사용.
-
-    TF-IDF 파이프라인이 토큰화/벡터화를 모두 포함하므로 여기서는
-    문자열만 뽑는다. current_prompt가 없거나 문자열이 아니면 빈 문자열.
-    """
-    text = sample.get("current_prompt", "")
-    if not isinstance(text, str):
-        text = "" if text is None else str(text)
-    return text
-
-
-def build_features(samples):
-    """샘플 리스트 → (ids, 모델 입력 텍스트 리스트)."""
-    ids = []
-    texts = []
-    for s in samples:
-        ids.append(s.get("id", ""))
-        texts.append(extract_text(s))
-    n_empty = sum(1 for t in texts if not t.strip())
-    if n_empty:
-        print(f" 경고: current_prompt가 비어있는 샘플 {n_empty}건")
-    return ids, texts
-
-
-# =======================
-# 3. 제출 파일 생성 유틸 (sample_submission의 id 순서/형식 기준)
-# =======================
-# 제출 파일은 sample_submission.csv 와 '같은 id 순서, 같은 컬럼(id, action)'이어야
-# 합니다. 모델 예측을 id 기준으로 sample_submission에 채워 넣습니다.
 
 def load_sample_submission(path):
-    """sample_submission.csv 로드 — 제출 파일의 id 순서/컬럼 기준."""
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
         rows = list(reader)
     if fieldnames is None or fieldnames[:2] != ["id", "action"]:
-        raise ValueError(
-            f"sample_submission 컬럼이 (id, action)이 아님: {fieldnames}")
+        raise ValueError(f"sample_submission columns are not ['id', 'action']: {fieldnames}")
     return fieldnames, rows
-
-
-def merge_predictions(sub_rows, ids, preds):
-    """sample_submission의 id 순서에 맞춰 예측값 병합.
-
-    예측에 없는 id는 sample_submission의 기존 값(placeholder)을 유지한다.
-    """
-    pred_map = dict(zip(ids, preds))
-    n_missing = 0
-    for row in sub_rows:
-        p = pred_map.get(row["id"])
-        if p is None:
-            n_missing += 1
-        else:
-            row["action"] = p
-    if n_missing:
-        print(f" 경고: 예측이 없어 placeholder를 유지한 id {n_missing}건")
-    return sub_rows
 
 
 def save_submission(path, fieldnames, rows):
@@ -117,51 +271,181 @@ def save_submission(path, fieldnames, rows):
         writer.writerows(rows)
 
 
-# =======================
-# 4. 추론 실행 (모델 로드 → 예측 → 제출 파일 생성)
-# =======================
+def safe_logit(p):
+    p = np.clip(p, EPS, 1.0 - EPS)
+    return np.log(p / (1.0 - p))
 
+
+# --------------------------------------------------------------------------- #
+# Pure-numpy TF-IDF transform for the specialist boosters.                     #
+# Matches sklearn TfidfVectorizer(analyzer="word", ngram_range=(1, 2),         #
+# lowercase=True, sublinear_tf=True, norm="l2"). Using saved vocab/idf instead #
+# of an unpickled sklearn object keeps inference independent of the server's   #
+# scikit-learn version.                                                        #
+# --------------------------------------------------------------------------- #
+TOKEN_RE = re.compile(r"(?u)\b\w\w+\b")  # sklearn default token_pattern
+
+
+def _word_ngrams(tokens):
+    grams = list(tokens)
+    for i in range(len(tokens) - 1):
+        grams.append(tokens[i] + " " + tokens[i + 1])
+    return grams
+
+
+def transform_tfidf(texts, vocab, idf):
+    n_feat = idf.shape[0]
+    indptr = [0]
+    indices = []
+    data = []
+    for text in texts:
+        tokens = TOKEN_RE.findall(text.lower())
+        counts = Counter(g for g in _word_ngrams(tokens) if g in vocab)
+        for term, cnt in counts.items():
+            col = vocab[term]
+            data.append((1.0 + np.log(cnt)) * idf[col])  # sublinear_tf * idf
+        indices.extend(vocab[t] for t in counts)
+        indptr.append(len(indices))
+    X = sparse.csr_matrix((data, indices, indptr), shape=(len(texts), n_feat), dtype=np.float64)
+    norms = np.sqrt(X.multiply(X).sum(axis=1)).A1  # l2 row norm
+    norms[norms == 0] = 1.0
+    return X.multiply(1.0 / norms[:, None]).tocsr()
+
+
+# --------------------------------------------------------------------------- #
+# klue dataset / collate                                                       #
+# --------------------------------------------------------------------------- #
+class TestDataset(Dataset):
+    def __init__(self, samples):
+        self.ids = [s.get("id", "") for s in samples]
+        self.texts = [build_text_eda_state(s) for s in samples]
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        return {"id": self.ids[idx], "text": self.texts[idx]}
+
+
+def make_collate_fn(tokenizer):
+    def collate_fn(batch):
+        ids = [x["id"] for x in batch]
+        texts = [x["text"] for x in batch]
+        enc = tokenizer(
+            texts, padding=True, truncation=True,
+            max_length=MAX_LEN, return_tensors="pt",
+        )
+        return ids, enc
+    return collate_fn
+
+
+# --------------------------------------------------------------------------- #
+# Main                                                                         #
+# --------------------------------------------------------------------------- #
 def main():
-    # ---- 경로 변수 (필요에 따라 수정) ----
-    TEST_DIR = "./data"            # test.jsonl, sample_submission.csv 위치
-    MODEL_DIR = "./model"          # tfidf_logreg.pkl 위치
-    OUT_DIR = "./output"
-    TEST_PATH = os.path.join(TEST_DIR, "test.jsonl")
-    SAMPLE_SUB_PATH = os.path.join(TEST_DIR, "sample_submission.csv")
-    MODEL_PATH = os.path.join(MODEL_DIR, "tfidf_logreg.pkl")
-    OUT_PATH = os.path.join(OUT_DIR, "submission.csv")
-
-    # ---- 모델 로드 ----
-    # 학습 노트북이 저장한 파이프라인(TF-IDF + 로지스틱 회귀)을 그대로 불러옵니다.
-    print("Load model...")
-    model = joblib.load(MODEL_PATH)
-    classes = list(getattr(model, "classes_", []))
-    print(f" OK. classes={len(classes)}")
-
-    # ---- 테스트 데이터 로드 ----
     print("Load test data...")
     samples = load_jsonl(TEST_PATH)
-    validate_samples(samples)
-    print(f" samples={len(samples)}")
+    print(f"samples={len(samples)}")
 
-    # ---- 전처리 (학습과 동일: current_prompt 추출) ----
-    print("Build features...")
-    ids, texts = build_features(samples)
-    print(f" texts={len(texts)}")
+    all_classes = load_labels(MODEL_DIR)
+    print(f"classes={len(all_classes)}")
 
-    # ---- 예측 ----
-    # 파이프라인이 TF-IDF 변환과 분류를 함께 수행하므로 텍스트를 그대로 넣습니다.
-    print("Inference model...")
-    preds = model.predict(texts) if texts else []
-    preds = [str(p) for p in preds]
-    print(f" preds={len(preds)}")
+    # ---- 1) klue transformer logits (fp32) ---------------------------------
+    print("Load klue tokenizer/model...")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=True)
+    except OSError as e:
+        print(f"Fast tokenizer load failed, retrying with use_fast=False: {e}")
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, use_fast=False)
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_DIR)
 
-    # ---- sample_submission 기반 결과 생성 (action 컬럼에 예측 클래스 채움) ----
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("device:", device)
+    # fp16 on GPU: ~2x faster (safe under the 10-min eval limit on T4) and
+    # verified to reproduce the fp32 booster score (val Macro-F1 0.7318 either
+    # way). CPU keeps fp32 since half is slow/unsupported for some ops there.
+    if device.type == "cuda":
+        model.half()
+    else:
+        model.float()
+    model.to(device)
+    model.eval()
+
+    dataset = TestDataset(samples)
+    loader = DataLoader(
+        dataset, batch_size=BATCH_SIZE, shuffle=False,
+        collate_fn=make_collate_fn(tokenizer), num_workers=2,
+    )
+
+    ordered_ids = []
+    logits_chunks = []
+    print("klue inference...")
+    with torch.no_grad():
+        for step, (ids, batch) in enumerate(loader, start=1):
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(**batch)
+            logits_chunks.append(outputs.logits.float().cpu().numpy())
+            ordered_ids.extend(ids)
+            if step % 100 == 0:
+                print(f"step {step}/{len(loader)}")
+
+    logits = np.concatenate(logits_chunks, axis=0).astype(np.float64)
+    print("logits:", logits.shape)
+
+    # ---- 2) specialist boosters (pure numpy; no sklearn) ------------------
+    print("Load specialists and apply boosters...")
+    spec = np.load(SPEC_NPZ, allow_pickle=False)
+    spec_classes = [str(c) for c in spec["all_classes"]]
+    if spec_classes != all_classes:
+        raise ValueError(
+            "Class order mismatch between klue labels.json and specialists.npz:\n"
+            f"  klue={all_classes}\n  spec={spec_classes}"
+        )
+    with open(SPEC_VOCAB, encoding="utf-8") as f:
+        vocab = json.load(f)
+    idf = spec["idf"].astype(np.float64)
+    coefs = spec["coefs"].astype(np.float64)          # (n_targets, n_feat)
+    intercepts = spec["intercepts"].astype(np.float64)
+    gammas = spec["gammas"].astype(np.float64)
+    targets = [str(t) for t in spec["targets"]]
+
+    router_texts = [build_text_router(s) for s in samples]
+    # Align specialist scores (built in `samples` order) to the transformer's
+    # output order (`ordered_ids`). With shuffle=False these match, but scatter
+    # by id keeps it correct regardless.
+    id_to_pos = {sid: i for i, sid in enumerate(ordered_ids)}
+    sample_ids = [s.get("id", "") for s in samples]
+    dst = np.array([id_to_pos[sid] for sid in sample_ids], dtype=np.int64)
+
+    X = transform_tfidf(router_texts, vocab, idf)
+    for k, target in enumerate(targets):
+        tid = all_classes.index(target)
+        decision = X.dot(coefs[k]) + intercepts[k]   # LogisticRegression logit
+        p = expit(decision)                          # predict_proba[:, 1]
+        s = np.clip(safe_logit(p), -8, 8)
+        contrib = np.zeros(logits.shape[0], dtype=np.float64)
+        np.add.at(contrib, dst, gammas[k] * s)
+        logits[:, tid] += contrib
+
+    pred_ids = logits.argmax(axis=1)
+    pred_map = {sid: all_classes[int(pid)] for sid, pid in zip(ordered_ids, pred_ids)}
+
+    # ---- 3) write submission ----------------------------------------------
     print("Build submission...")
-    fieldnames, sub_rows = load_sample_submission(SAMPLE_SUB_PATH)
-    sub_rows = merge_predictions(sub_rows, ids, preds)
-    save_submission(OUT_PATH, fieldnames, sub_rows)
-    print(f"Saved: {OUT_PATH} (rows={len(sub_rows)})")
+    fieldnames, rows = load_sample_submission(SAMPLE_SUB_PATH)
+    missing = 0
+    for row in rows:
+        sid = row["id"]
+        if sid in pred_map:
+            row["action"] = pred_map[sid]
+        else:
+            missing += 1
+    if missing:
+        print(f"Warning: missing predictions for {missing} rows")
+
+    save_submission(OUT_PATH, fieldnames, rows)
+    print(f"Saved: {OUT_PATH} rows={len(rows)}")
+    print("Done.")
 
 
 if __name__ == "__main__":
