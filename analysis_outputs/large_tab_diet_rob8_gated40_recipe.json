@@ -1,0 +1,75 @@
+{
+  "name": "large_tab_diet_rob8_gated40",
+  "local_eval": {
+    "split": "fold0",
+    "macro_f1_with_bias": 0.7646781949726907,
+    "macro_f1_before_bias": 0.7601265701149389,
+    "accuracy_with_bias": 0.7588011758801176,
+    "accuracy_before_bias": 0.7559331755933175
+  },
+  "submission": {
+    "large_gate_ratio": 0.4,
+    "observed_lb": 0.7519523375,
+    "observed_runtime": "9m38s",
+    "script": "submit/script_large_tab_diet_rob8_gated40.py",
+    "zip": "submit/submit_large_tab_diet_rob8_gated40.zip"
+  },
+  "models": {
+    "large": {
+      "path": "submit/model/klue_roberta_large_eda_state_fold0",
+      "fp16_path": "submit/model/klue_roberta_large_eda_state_fold0_fp16",
+      "weight": 0.24114308710234722,
+      "temperature": 1.0
+    },
+    "tab": {
+      "path": "submit/model/tabular_histgb_fold0",
+      "weight": 0.4438507372276068,
+      "temperature": 1.0
+    },
+    "diet": {
+      "path": "submit/model/kluebert_diet_fold0",
+      "fp16_path": "submit/model/kluebert_diet_fold0_fp16",
+      "weight": 0.21685297669057865,
+      "temperature": 1.0
+    },
+    "rob8": {
+      "path": "submit/model/roberta_eda_state8_lr15_fold0",
+      "fp16_path": "submit/model/roberta_eda_state8_lr15_fold0_fp16",
+      "weight": 0.09815319897946724,
+      "temperature": 0.85
+    }
+  },
+  "class_order": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ],
+  "class_bias": {
+    "read_file": 0.0,
+    "grep_search": -0.3000011444091797,
+    "list_directory": 0.39999818801879883,
+    "glob_pattern": 0.6499979496002197,
+    "edit_file": -0.3000011444091797,
+    "write_file": 0.0,
+    "apply_patch": 0.0,
+    "run_bash": -0.000001430511474609375,
+    "run_tests": -0.2500011920928955,
+    "lint_or_typecheck": -0.35000109672546387,
+    "ask_user": -0.2500011920928955,
+    "plan_task": -0.10000133514404297,
+    "web_search": 0.4999980926513672,
+    "respond_only": 1.3499972820281982
+  },
+  "formula": "score = sum(weight_i * (logits_i / temperature_i)) + class_bias; pred = argmax(score)"
+}

@@ -17,7 +17,9 @@ def parse_args():
     parser.add_argument("--max_len", type=int, default=512)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--split_mode", choices=["row", "group"], default="row")
+    parser.add_argument("--split_mode", choices=["row", "group", "fold"], default="row")
+    parser.add_argument("--fold_file", default="")
+    parser.add_argument("--fold_id", type=int, default=0)
     return parser.parse_args()
 
 
@@ -27,6 +29,8 @@ def main():
     os.environ["TEXT_MODE"] = args.text_mode
     os.environ["MAX_LEN"] = str(args.max_len)
     os.environ["SPLIT_MODE"] = args.split_mode
+    os.environ["FOLD_FILE"] = args.fold_file
+    os.environ["FOLD_ID"] = str(args.fold_id)
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
     import train_roberta as tr
@@ -39,6 +43,9 @@ def main():
     print("MODEL_DIR:", model_dir)
     print("TEXT_MODE:", args.text_mode)
     print("SPLIT_MODE:", args.split_mode)
+    if args.split_mode == "fold":
+        print("FOLD_FILE:", args.fold_file)
+        print("FOLD_ID:", args.fold_id)
     print("OUTPUT_DIR:", output_dir)
 
     texts, labels, rows = tr.load_data()

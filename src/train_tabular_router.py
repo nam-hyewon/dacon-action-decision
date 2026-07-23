@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -58,6 +59,42 @@ def get_actions(sample):
         for h in sample.get("history", [])
         if h.get("role") == "assistant_action"
     ]
+
+
+def get_assistant_actions(sample):
+    return [
+        h
+        for h in sample.get("history", [])
+        if h.get("role") == "assistant_action"
+    ]
+
+
+def result_status(result_summary):
+    """Normalize a result_summary string into a coarse status.
+
+    Rule-based (no label leakage). Categories: ok / fail / zero / other.
+    """
+    r = str(result_summary)
+    rl = r.lower()
+    if (
+        rl.startswith("error")
+        or r.startswith("FAIL")
+        or "command failed" in rl
+        or "target string not found" in rl
+    ):
+        return "fail"
+    if re.match(r"^\d+ errors", r):  # lint: "2 errors, 1 files affected"
+        return "fail"
+    if (
+        r.startswith("0 matches")
+        or r == "no relevant results"
+        or r.startswith("0 files")
+        or r.startswith("0 results")
+    ):
+        return "zero"
+    if rl.startswith("ok") or r.startswith("PASS") or r.startswith("exit=0"):
+        return "ok"
+    return "other"
 
 
 def prompt_flags(text):
@@ -123,6 +160,39 @@ def make_features(sample):
     for action in ALL_CLASSES:
         row[f"cnt_{action}"] = action_counts.get(action, 0)
     row.update(prompt_flags(current_prompt))
+
+    # --- result_summary group (validated +last_result; concentrated on the
+    #     result-varying actions: run_tests / lint / apply_patch / grep) ---
+    aacts = get_assistant_actions(sample)
+    last_result = result_status(aacts[-1].get("result_summary", "")) if aacts else "none"
+    prev_result = result_status(aacts[-2].get("result_summary", "")) if len(aacts) >= 2 else "none"
+    row["last_result"] = last_result
+    row["prev_result"] = prev_result
+    row["last_act_result"] = f"{last_action}:{last_result}"
+    row["last_result_fail"] = int(last_result == "fail")
+    row["last_result_zero"] = int(last_result == "zero")
+    row["last_result_ok"] = int(last_result == "ok")
+    row["last_ci_fail"] = int(str(workspace.get("last_ci_status", "")) == "failing")
+
+    # --- recent window / run-length group (fixes the whole-session cnt_ defect) ---
+    recent5 = Counter(actions[-5:])
+    for action in ALL_CLASSES:
+        row[f"r5_{action}"] = recent5.get(action, 0)
+    run = 0
+    for name in reversed(actions):
+        if name == last_action:
+            run += 1
+        else:
+            break
+    row["same_action_run"] = run
+
+    # --- prompt surface flags (separates "?" from kw_ask; biggest standalone lift,
+    #     drives ask_user / plan_task / respond_only) ---
+    cp = current_prompt
+    row["pf_code"] = int("```" in cp or bool(re.search(r"`[^`]+`", cp)))
+    row["pf_path"] = int(bool(re.search(r"[\w/]+\.\w{1,5}\b|[\w-]+/[\w/-]+", cp)))
+    row["pf_error"] = int(bool(re.search(r"error|exception|traceback|fail|에러|오류", cp, re.I)))
+    row["pf_qmark"] = int("?" in cp)
     return row
 
 
@@ -145,7 +215,7 @@ def load_frame(data_dir):
     return pd.DataFrame(rows)
 
 
-def split_indices(df, split_mode, seed):
+def split_indices(df, split_mode, seed, fold_file=None, fold_id=0):
     idx = np.arange(len(df))
     y = df["label"].values
     if split_mode == "row":
@@ -153,11 +223,27 @@ def split_indices(df, split_mode, seed):
     if split_mode == "group":
         splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
         return next(splitter.split(idx, y, df["session_id"].values))
+    if split_mode == "fold":
+        if not fold_file:
+            raise ValueError("split_mode=fold requires --fold_file")
+        id_to_fold = {}
+        with open(fold_file, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                id_to_fold[row["id"]] = int(row["fold"])
+        ids = df["id"].astype(str).values
+        missing = [i for i in ids if i not in id_to_fold]
+        if missing:
+            raise ValueError(f"fold_file missing {len(missing)} ids. First: {missing[:3]}")
+        train_idx = np.array([k for k, i in enumerate(ids) if id_to_fold[i] != fold_id])
+        val_idx = np.array([k for k, i in enumerate(ids) if id_to_fold[i] == fold_id])
+        if len(val_idx) == 0:
+            raise ValueError(f"fold_id={fold_id} has no rows in {fold_file}")
+        return train_idx, val_idx
     raise ValueError(f"unknown split_mode={split_mode}")
 
 
 def build_model(model_type, categorical_cols, numeric_cols, seed):
-    sparse_output = model_type != "histgb"
+    sparse_output = model_type not in {"histgb"}
     preprocess = ColumnTransformer(
         transformers=[
             (
@@ -198,6 +284,44 @@ def build_model(model_type, categorical_cols, numeric_cols, seed):
             max_leaf_nodes=31,
             random_state=seed,
         )
+    elif model_type == "lightgbm":
+        try:
+            from lightgbm import LGBMClassifier
+        except ImportError as exc:
+            raise ImportError("lightgbm is not installed. Run: pip install lightgbm") from exc
+        clf = LGBMClassifier(
+            objective="multiclass",
+            n_estimators=900,
+            learning_rate=0.035,
+            num_leaves=31,
+            max_depth=-1,
+            min_child_samples=30,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            reg_alpha=0.05,
+            reg_lambda=0.2,
+            class_weight="balanced",
+            random_state=seed,
+            n_jobs=-1,
+            verbosity=-1,
+        )
+    elif model_type == "catboost":
+        try:
+            from catboost import CatBoostClassifier
+        except ImportError as exc:
+            raise ImportError("catboost is not installed. Run: pip install catboost") from exc
+        clf = CatBoostClassifier(
+            loss_function="MultiClass",
+            iterations=900,
+            learning_rate=0.035,
+            depth=6,
+            l2_leaf_reg=5.0,
+            random_seed=seed,
+            auto_class_weights="Balanced",
+            thread_count=-1,
+            verbose=False,
+            allow_writing_files=False,
+        )
     else:
         raise ValueError(f"unknown model_type={model_type}")
 
@@ -208,16 +332,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data_dir", default="data")
     ap.add_argument("--out_dir", required=True)
-    ap.add_argument("--split_mode", choices=["row", "group"], default="group")
-    ap.add_argument("--model_type", choices=["extratrees", "histgb"], default="extratrees")
+    ap.add_argument("--split_mode", choices=["row", "group", "fold"], default="group")
+    ap.add_argument("--model_type", choices=["extratrees", "histgb", "lightgbm", "catboost"], default="extratrees")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--fold_file", default="data/folds_seed42.csv")
+    ap.add_argument("--fold_id", type=int, default=0)
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     df = load_frame(Path(args.data_dir))
 
-    train_idx, val_idx = split_indices(df, args.split_mode, args.seed)
+    train_idx, val_idx = split_indices(df, args.split_mode, args.seed, args.fold_file, args.fold_id)
     train_df = df.iloc[train_idx].reset_index(drop=True)
     val_df = df.iloc[val_idx].reset_index(drop=True)
     train_sessions = set(train_df["session_id"])
@@ -226,7 +352,32 @@ def main():
     print("sessions overlap:", len(train_sessions & val_sessions))
 
     drop_cols = {"id", "session_id", "label", "label_name"}
-    feature_cols = [c for c in df.columns if c not in drop_cols]
+    drop_prefixes = tuple(
+        p for p in os.environ.get("DROP_FEATURE_PREFIXES", "").split(",") if p
+    )
+    keep_prefixes = tuple(
+        p for p in os.environ.get("KEEP_FEATURE_PREFIXES", "").split(",") if p
+    )
+    drop_features = {
+        p for p in os.environ.get("DROP_FEATURES", "").split(",") if p
+    }
+    keep_features = {
+        p for p in os.environ.get("KEEP_FEATURES", "").split(",") if p
+    }
+    feature_cols = [
+        c for c in df.columns
+        if c not in drop_cols
+        and c not in drop_features
+        and not (drop_prefixes and c.startswith(drop_prefixes))
+        and (not keep_prefixes or c.startswith(keep_prefixes) or c in keep_features)
+    ]
+    if drop_prefixes:
+        print("dropping feature prefixes:", drop_prefixes)
+    if drop_features:
+        print("dropping features:", sorted(drop_features))
+    if keep_prefixes or keep_features:
+        print("keeping feature prefixes:", keep_prefixes)
+        print("keeping features:", sorted(keep_features))
     categorical_cols = [
         c for c in feature_cols
         if df[c].dtype == "object" or c.endswith("_bucket") or "action" in c

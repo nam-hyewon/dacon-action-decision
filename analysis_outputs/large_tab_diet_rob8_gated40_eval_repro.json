@@ -1,0 +1,74 @@
+{
+  "recipe": "large_tab_diet_rob8_gated40_fold0_eval",
+  "n": 13947,
+  "classes": [
+    "read_file",
+    "grep_search",
+    "list_directory",
+    "glob_pattern",
+    "edit_file",
+    "write_file",
+    "apply_patch",
+    "run_bash",
+    "run_tests",
+    "lint_or_typecheck",
+    "ask_user",
+    "plan_task",
+    "web_search",
+    "respond_only"
+  ],
+  "components": {
+    "large": {
+      "macro_f1": 0.7359294916751545,
+      "accuracy": 0.7396572739657274
+    },
+    "tab": {
+      "macro_f1": 0.45538486698542296,
+      "accuracy": 0.48289954828995485
+    },
+    "diet": {
+      "macro_f1": 0.7209854114148558,
+      "accuracy": 0.7296909729690974
+    },
+    "rob8": {
+      "macro_f1": 0.714461372235256,
+      "accuracy": 0.7250304725030472
+    }
+  },
+  "before_class_bias": {
+    "macro_f1": 0.7601265701149389,
+    "accuracy": 0.7559331755933175
+  },
+  "after_class_bias": {
+    "macro_f1": 0.7646781949726907,
+    "accuracy": 0.7588011758801176
+  },
+  "weights": {
+    "large": 0.24114308710234722,
+    "tab": 0.4438507372276068,
+    "diet": 0.21685297669057865,
+    "rob8": 0.09815319897946724
+  },
+  "temperatures": {
+    "large": 1.0,
+    "tab": 1.0,
+    "diet": 1.0,
+    "rob8": 0.85
+  },
+  "class_bias": {
+    "read_file": 0.0,
+    "grep_search": -0.3000011444091797,
+    "list_directory": 0.39999818801879883,
+    "glob_pattern": 0.6499979496002197,
+    "edit_file": -0.3000011444091797,
+    "write_file": 0.0,
+    "apply_patch": 0.0,
+    "run_bash": -1.430511474609375e-06,
+    "run_tests": -0.2500011920928955,
+    "lint_or_typecheck": -0.35000109672546387,
+    "ask_user": -0.2500011920928955,
+    "plan_task": -0.10000133514404297,
+    "web_search": 0.4999980926513672,
+    "respond_only": 1.3499972820281982
+  }
+}
